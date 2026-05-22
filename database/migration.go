@@ -19,7 +19,6 @@ func MigrateModels(db *gorm.DB) error {
 		&models.Foodstock{},
 		&models.Health{},
 		&models.Vaccine{},
-		&models.User{},
 	); err != nil {
 		log.Printf("Migration error: %v", err)
 		return err
