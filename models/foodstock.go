@@ -4,7 +4,7 @@ import "time"
 
 // Foodstock represents food inventory/storage
 type Foodstock struct {
-	FoodID          int       `gorm:"primaryKey;autoIncrement;column:food_id" json:"food_id"`
+	FoodID          int       `gorm:"primaryKey;autoIncrement;column:food_id;type:int" json:"food_id"`
 	QuantityCurrent float64   `gorm:"column:quantity_current;type:decimal(10,2)" json:"quantity_current"`
 	MinQuantity     float64   `gorm:"column:min_quantity;type:decimal(10,2);default:0" json:"min_quantity"`
 	ImportDate      time.Time `gorm:"column:import_date" json:"import_date"`
@@ -18,4 +18,3 @@ type Foodstock struct {
 func (Foodstock) TableName() string {
 	return "foodstock"
 }
-

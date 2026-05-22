@@ -4,7 +4,7 @@ import "time"
 
 // Coop represents the chicken coop/farm information
 type Coop struct {
-	CoopID           int       `gorm:"primaryKey;autoIncrement;column:coop_id" json:"coop_id"`
+	CoopID           int       `gorm:"primaryKey;autoIncrement;column:coop_id;type:int" json:"coop_id"`
 	DateAdoptAnimals time.Time `gorm:"column:date_adopt_animals" json:"date_adopt_animals"`
 	Amount           int       `gorm:"column:amount" json:"amount"`
 	Birthday         time.Time `gorm:"column:birthday;uniqueIndex" json:"birthday"`

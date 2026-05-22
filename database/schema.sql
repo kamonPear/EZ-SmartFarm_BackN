@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS coop (
 -- 2. สร้างตารางข้อมูลอุปกรณ์ (device)
 CREATE TABLE IF NOT EXISTS device (
     device_id INT AUTO_INCREMENT PRIMARY KEY,
-    coop_id INT,
+    coop_id INT NOT NULL,
     name VARCHAR(100) NOT NULL,
     device_type VARCHAR(50) NOT NULL,
     current_status VARCHAR(20) DEFAULT 'Offline',
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS device (
 -- 3. สร้างตารางบันทึกข้อมูลเซนเซอร์ (sensor_log)
 CREATE TABLE IF NOT EXISTS sensor_log (
     log_id INT AUTO_INCREMENT PRIMARY KEY,
-    device_id INT,
+    device_id INT NOT NULL,
     value DECIMAL(10,2) NOT NULL,
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (device_id) REFERENCES device(device_id) ON DELETE CASCADE,
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS sensor_log (
 -- 4. สร้างตารางข้อมูลการเก็บไข่ (egg)
 CREATE TABLE IF NOT EXISTS egg (
     egg_id INT AUTO_INCREMENT PRIMARY KEY,
-    coop_id INT,
+    coop_id INT NOT NULL,
     date_collect_egg DATE,
     number_egg INT NOT NULL,
     note LONGTEXT,
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS foodstock (
 -- 6. สร้างตารางข้อมูลสุขภาพไก่ (health)
 CREATE TABLE IF NOT EXISTS health (
     health_id INT AUTO_INCREMENT PRIMARY KEY,
-    coop_id INT,
+    coop_id INT NOT NULL,
     healthy INT DEFAULT 0,
     poor_health INT DEFAULT 0,
     note LONGTEXT,
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS health (
 -- 7. สร้างตารางข้อมูลวัคซีน (vaccine)
 CREATE TABLE IF NOT EXISTS vaccine (
     vaccine_id INT AUTO_INCREMENT PRIMARY KEY,
-    coop_id INT,
+    coop_id INT NOT NULL,
     birthday DATE,
     name VARCHAR(50) NOT NULL,
     record_date DATE NOT NULL,

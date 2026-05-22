@@ -1,14 +1,9 @@
 package models
 
-import "time"
-
 // SensorLog represents sensor data records
 type SensorLog struct {
-	LogID     int       `gorm:"primaryKey;autoIncrement;column:log_id" json:"log_id"`
-	DeviceID  int       `gorm:"column:device_id;index" json:"device_id"`
-	Value     float64   `gorm:"column:value;type:decimal(10,2)" json:"value"`
-	Timestamp time.Time `gorm:"column:timestamp;autoCreateTime:milli" json:"timestamp"`
-
+	LogID    int `gorm:"primaryKey;autoIncrement;column:log_id;type:int" json:"log_id"`
+	DeviceID int `gorm:"column:device_id;index;not null;type:int" json:"device_id"`
 	// Relations
 	Device Device `gorm:"foreignKey:DeviceID;references:DeviceID" json:"device,omitempty"`
 }

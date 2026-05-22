@@ -4,8 +4,8 @@ import "time"
 
 // Device represents farm equipment/sensors
 type Device struct {
-	DeviceID      int       `gorm:"primaryKey;column:device_id" json:"device_id"`
-	CoopID        int       `gorm:"column:coop_id;index" json:"coop_id"`
+	DeviceID      int       `gorm:"primaryKey;column:device_id;type:int" json:"device_id"`
+	CoopID        int       `gorm:"column:coop_id;index;not null;type:int" json:"coop_id"`
 	Name          string    `gorm:"column:name;type:varchar(100)" json:"name"`
 	DeviceType    string    `gorm:"column:device_type;type:varchar(50)" json:"device_type"`
 	CurrentStatus string    `gorm:"column:current_status;type:varchar(20);default:'Offline'" json:"current_status"`
