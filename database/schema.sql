@@ -93,3 +93,4 @@ CREATE TABLE IF NOT EXISTS vaccine (
     INDEX idx_coop_id (coop_id),
     INDEX idx_birthday (birthday)
 );
+
