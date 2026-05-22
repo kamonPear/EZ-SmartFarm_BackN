@@ -27,3 +27,4 @@ func MigrateModels(db *gorm.DB) error {
 	fmt.Println("✓ All tables migrated successfully")
 	return nil
 }
+

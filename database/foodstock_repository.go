@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// CreateFoodstock creates a new foodstock in the database
+// CreateFoodstock creates a new foodstock in the database 
 func CreateFoodstock(req *models.CreateFoodstockRequest) (*models.Foodstock, error) {
 	foodstock := &models.Foodstock{
 		QuantityCurrent: req.QuantityCurrent,

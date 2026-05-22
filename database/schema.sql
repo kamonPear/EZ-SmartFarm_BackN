@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS device (
     FOREIGN KEY (coop_id) REFERENCES coop(coop_id) ON DELETE CASCADE,
     INDEX idx_coop_id (coop_id)
 );
-
+ 
 -- 3. สร้างตารางบันทึกข้อมูลเซนเซอร์ (sensor_log)
 CREATE TABLE IF NOT EXISTS sensor_log (
     log_id INT AUTO_INCREMENT PRIMARY KEY,

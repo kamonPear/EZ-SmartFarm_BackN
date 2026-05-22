@@ -18,3 +18,4 @@ type Foodstock struct {
 func (Foodstock) TableName() string {
 	return "foodstock"
 }
+

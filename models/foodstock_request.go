@@ -28,3 +28,4 @@ type FoodstockResponse struct {
 	ExpiryDate      time.Time `json:"expiry_date"`
 	DateUp          time.Time `json:"date_up"`
 }
+
