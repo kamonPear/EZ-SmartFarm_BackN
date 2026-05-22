@@ -17,7 +17,8 @@ type Vaccine struct {
 	Coop Coop `gorm:"foreignKey:CoopID;references:CoopID" json:"coop,omitempty"`
 }
 
-// TableName specifies the table name for Vaccine model
+// TableName specifies the table name for Vaccine model 
+
 func (Vaccine) TableName() string {
 	return "vaccine" 
 }
