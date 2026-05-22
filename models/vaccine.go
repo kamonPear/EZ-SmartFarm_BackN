@@ -19,5 +19,5 @@ type Vaccine struct {
 
 // TableName specifies the table name for Vaccine model
 func (Vaccine) TableName() string {
-	return "vaccine"
+	return "vaccine" 
 }
