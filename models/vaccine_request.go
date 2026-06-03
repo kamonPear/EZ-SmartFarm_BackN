@@ -178,5 +178,3 @@ func GetAllVaccineSchedules() []VaccineAgeSchedule {
 		},
 	}
 }
-
-

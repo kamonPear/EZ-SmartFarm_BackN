@@ -209,5 +209,3 @@ func GetRecommendedVaccinesHandler(w http.ResponseWriter, r *http.Request) {
 		"schedules": allSchedules,
 	})
 }
-
-
