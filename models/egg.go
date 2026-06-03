@@ -11,7 +11,7 @@ type Egg struct {
 	Note           string    `gorm:"column:note;type:text" json:"note"`
 
 	// Relations
-	Coop Coop `gorm:"foreignKey:CoopID;references:CoopID" json:"coop,omitempty"`
+	Coop Coop `gorm:"foreignKey:CoopID;constraint:-" json:"coop,omitempty"`
 }
 
 // TableName specifies the table name for Egg model

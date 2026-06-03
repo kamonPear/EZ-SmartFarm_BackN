@@ -10,6 +10,8 @@ type Health struct {
 	PoorHealth int       `gorm:"column:poor_health;default:0" json:"poor_health"`
 	Note       string    `gorm:"column:note;type:text" json:"note"`
 	RecordDate time.Time `gorm:"column:record_date;index" json:"record_date"`
+
+	Coop Coop `gorm:"foreignKey:CoopID;constraint:-" json:"coop,omitempty"`
 }
 
 // TableName specifies the table name for Health model

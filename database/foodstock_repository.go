@@ -10,24 +10,53 @@ import (
 )
 
 // CreateFoodstock creates a new foodstock in the database 
+// CreateFoodstock creates a new foodstock or updates the existing one (Upsert)
+// CreateFoodstock creates a new foodstock or updates the existing one
+// CreateFoodstock creates a new foodstock or adds quantity to the existing one
 func CreateFoodstock(req *models.CreateFoodstockRequest) (*models.Foodstock, error) {
-	foodstock := &models.Foodstock{
-		QuantityCurrent: req.QuantityCurrent,
-		MinQuantity:     req.MinQuantity,
-		ImportDate:      req.ImportDate,
-		ExpiryDate:      req.ExpiryDate,
-		DateUp:          req.DateUp,
-	}
+    var existingFoodstock models.Foodstock
 
-	if err := DB.Create(foodstock).Error; err != nil {
-		log.Printf("Error creating foodstock: %v", err)
-		return nil, err
-	}
+    // 1. ค้นหาข้อมูลเดิม (ล็อคเป้าที่ ID 1 เสมอ)
+    err := DB.Where("food_id = ?", 1).First(&existingFoodstock).Error
 
-	log.Printf("✓ Foodstock created with ID: %d\n", foodstock.FoodID)
-	return foodstock, nil
+    if err == nil {
+        // 🌟 2. ถ้ามีข้อมูลเดิมอยู่ ให้เอา "ของเดิม + ของใหม่"
+        totalQuantity := existingFoodstock.QuantityCurrent + req.QuantityCurrent
+
+        // อัปเดตข้อมูลเป็นของลอตใหม่ล่าสุด
+        existingFoodstock.QuantityCurrent = totalQuantity // ค่าที่บวกกันแล้ว
+        existingFoodstock.MinQuantity     = req.MinQuantity // อัปเดตค่าแจ้งเตือน
+        existingFoodstock.ImportDate      = req.ImportDate  // อัปเดตวันรับเข้า
+        existingFoodstock.ExpiryDate      = req.ExpiryDate  // อัปเดตวันหมดอายุตามลอตใหม่
+        existingFoodstock.DateUp          = req.DateUp
+
+        // บันทึกทับลงไปใน ID 1
+        if updateErr := DB.Save(&existingFoodstock).Error; updateErr != nil {
+            log.Printf("Error updating foodstock: %v", updateErr)
+            return nil, updateErr
+        }
+        log.Printf("✓ Foodstock ID 1 Updated: Added %f, Total is now %f\n", req.QuantityCurrent, totalQuantity)
+        return &existingFoodstock, nil
+    }
+
+    // 🌟 3. ถ้าไม่มีข้อมูลเดิมเลย (เพิ่งเริ่มระบบ หรือเคยกดลบไป) ให้สร้างเป็น ID 1 ใหม่
+    newFoodstock := &models.Foodstock{
+        FoodID:          1,
+        QuantityCurrent: req.QuantityCurrent,
+        MinQuantity:     req.MinQuantity,
+        ImportDate:      req.ImportDate,
+        ExpiryDate:      req.ExpiryDate,
+        DateUp:          req.DateUp,
+    }
+
+    if createErr := DB.Create(newFoodstock).Error; createErr != nil {
+        log.Printf("Error creating foodstock: %v", createErr)
+        return nil, createErr
+    }
+
+    log.Printf("✓ Foodstock created with ID 1, Initial Quantity: %f\n", req.QuantityCurrent)
+    return newFoodstock, nil
 }
-
 // GetFoodstockByID retrieves a foodstock by ID
 func GetFoodstockByID(foodID int) (*models.Foodstock, error) {
 	var foodstock *models.Foodstock
