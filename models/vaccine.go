@@ -22,3 +22,4 @@ type Vaccine struct {
 func (Vaccine) TableName() string {
 	return "vaccine"
 }
+
