@@ -10,11 +10,11 @@ type Coop struct {
 	Birthday         time.Time `gorm:"column:birthday;uniqueIndex" json:"birthday"`
 	Note             string    `gorm:"column:note;type:text" json:"note"`
 
-	// Relations
-	Devices  []Device  `gorm:"foreignKey:CoopID;references:CoopID" json:"devices,omitempty"`
-	Eggs     []Egg     `gorm:"foreignKey:CoopID;references:CoopID" json:"eggs,omitempty"`
-	Health   []Health  `gorm:"foreignKey:CoopID;references:CoopID" json:"health,omitempty"`
-	Vaccines []Vaccine `gorm:"foreignKey:CoopID;references:CoopID" json:"vaccines,omitempty"`
+	// Relations (แก้โดยการลบ references:CoopID ออก)
+	Devices  []Device  `gorm:"foreignKey:CoopID" json:"devices,omitempty"`
+	Eggs     []Egg     `gorm:"foreignKey:CoopID" json:"eggs,omitempty"`
+	Health   []Health  `gorm:"foreignKey:CoopID" json:"health,omitempty"`
+	Vaccines []Vaccine `gorm:"foreignKey:CoopID" json:"vaccines,omitempty"`
 }
 
 // TableName specifies the table name for Coop model
