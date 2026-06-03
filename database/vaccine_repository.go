@@ -74,3 +74,5 @@ func DeleteVaccinesByCoopID(coopID int) error {
 	log.Printf("Successfully deleted %d vaccine records for coop ID %d", result.RowsAffected, coopID)
 	return nil
 }
+
+

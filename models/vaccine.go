@@ -23,3 +23,4 @@ func (Vaccine) TableName() string {
 	return "vaccine"
 }
 
+
