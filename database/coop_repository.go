@@ -3,15 +3,27 @@ package database
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"EZ-SmartFarm_BachN/models"
 
 	"gorm.io/gorm"
 )
 
+// IsDuplicateNameCoop reports whether err is a unique-constraint violation on name_coop
+func IsDuplicateNameCoop(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "name_coop") &&
+		(strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique"))
+}
+
 // CreateCoop creates a new coop in the database
 func CreateCoop(req *models.CreateCoopRequest) (*models.Coop, error) {
 	coop := &models.Coop{
+		NameCoop:         req.NameCoop,
 		DateAdoptAnimals: req.DateAdoptAnimals,
 		Amount:           req.Amount,
 		Birthday:         req.Birthday,

@@ -26,3 +26,5 @@ type DeviceResponse struct {
 	CurrentStatus string    `json:"current_status"`
 	LastUpdate    time.Time `json:"last_update"`
 }
+
+

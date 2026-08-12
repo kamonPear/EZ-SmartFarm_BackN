@@ -3,20 +3,20 @@ package database
 import (
 	"time"
 	"EZ-SmartFarm_BachN/models"
-	"gorm.io/gorm"// สมมติว่าใช้ gorm v1 หรือ v2 ปรับตามอิมพอร์ตของคุณนะครับ
+	"gorm.io/gorm"
 )
 
-// SaveCoopLayout บันทึกพิกัดอุปกรณ์แบบ GORM Style
 func SaveCoopLayout(coopID int, slots []models.SlotPayload) error {
-	// ใช้ GORM Transaction อัตโนมัติ (ถ้าด้านใน return error มันจะ Rollback ให้เอง)
 	return DB.Transaction(func(tx *gorm.DB) error {
 		
-		// 1. ลบอุปกรณ์เดิมในเล้าเพื่อเคลียร์ Layout เก่า
+		if err := tx.Exec("DELETE FROM sensor_log WHERE device_id IN (SELECT device_id FROM device WHERE coop_id = ?)", coopID).Error; err != nil {
+			return err
+		}
+
 		if err := tx.Where("coop_id = ?", coopID).Delete(&models.Device{}).Error; err != nil {
 			return err
 		}
 
-		// 2. วนลูปบันทึกเฉพาะช่องที่กดวางอุปกรณ์ (ช่องที่มี device ไม่เป็น nil)
 		for _, slot := range slots {
 			if slot.Device != nil {
 				deviceType := "Sensor"
@@ -24,10 +24,9 @@ func SaveCoopLayout(coopID int, slots []models.SlotPayload) error {
 					deviceType = "Actuator"
 				}
 
-				// สร้าง Object จาก Model Device ของคุณ
 				newDevice := models.Device{
-					CoopID:        coopID,
-					SlotIndex:     slot.ID, // ไอดีช่อง 0-20 จาก Angular
+					CoopID:        int32(coopID),
+					SlotIndex:     int32(slot.ID),
 					Name:          slot.Device.Name,
 					Icon:          slot.Device.Icon,
 					DeviceType:    deviceType,
@@ -35,7 +34,6 @@ func SaveCoopLayout(coopID int, slots []models.SlotPayload) error {
 					LastUpdate:    time.Now(),
 				}
 
-				// สั่ง GORM บันทึกลงตาราง device
 				if err := tx.Create(&newDevice).Error; err != nil {
 					return err
 				}
@@ -44,4 +42,39 @@ func SaveCoopLayout(coopID int, slots []models.SlotPayload) error {
 		
 		return nil
 	})
+}
+
+func GetAllDevices() ([]models.Device, error) {
+	var devices []models.Device
+	err := DB.Find(&devices).Error
+	return devices, err
+}
+
+func GetDeviceByID(id int) (*models.Device, error) {
+	var device models.Device
+	err := DB.First(&device, id).Error
+	return &device, err
+}
+
+func GetDevicesByCoopID(coopID int) ([]models.Device, error) {
+	var devices []models.Device
+	err := DB.Where("coop_id = ?", coopID).Find(&devices).Error
+	return devices, err
+}
+
+func CreateDevice(device *models.Device) error {
+	device.LastUpdate = time.Now()
+	if device.CurrentStatus == "" {
+		device.CurrentStatus = "Offline"
+	}
+	return DB.Create(device).Error
+}
+
+func UpdateDevice(device *models.Device) error {
+	device.LastUpdate = time.Now()
+	return DB.Model(device).Updates(device).Error
+}
+
+func DeleteDevice(id int) error {
+	return DB.Delete(&models.Device{}, id).Error
 }

@@ -5,9 +5,10 @@ import "time"
 // Coop represents the chicken coop/farm information
 type Coop struct {
 	CoopID           int       `gorm:"primaryKey;autoIncrement;column:coop_id;type:int" json:"coop_id"`
+	NameCoop         string    `gorm:"column:name_coop;type:varchar(100);unique" json:"name_coop"`
 	DateAdoptAnimals time.Time `gorm:"column:date_adopt_animals" json:"date_adopt_animals"`
 	Amount           int       `gorm:"column:amount" json:"amount"`
-	Birthday         time.Time `gorm:"column:birthday;uniqueIndex" json:"birthday"`
+	Birthday         time.Time `gorm:"index:idx_coop_birthday" json:"birthday"`
 	Note             string    `gorm:"column:note;type:text" json:"note"`
 
 	// Relations (แก้โดยการลบ references:CoopID ออก)
@@ -21,3 +22,4 @@ type Coop struct {
 func (Coop) TableName() string {
 	return "coop"
 }
+

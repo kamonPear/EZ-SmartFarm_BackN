@@ -10,43 +10,6 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// CreateFoodstockHandler creates a new foodstock
-// POST /api/foodstocks
-func CreateFoodstockHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req models.CreateFoodstockRequest
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("[%s] %s - %d (Invalid request body)", r.Method, r.RequestURI, http.StatusBadRequest)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	// Validate required fields
-	if req.QuantityCurrent < 0 || req.ImportDate.IsZero() || req.ExpiryDate.IsZero() || req.DateUp.IsZero() {
-		log.Printf("[%s] %s - %d (Missing required fields)", r.Method, r.RequestURI, http.StatusBadRequest)
-		http.Error(w, "Missing required fields: quantity_current, import_date, expiry_date, date_up", http.StatusBadRequest)
-		return
-	}
-
-	foodstock, err := database.CreateFoodstock(&req)
-	if err != nil {
-		log.Printf("[%s] %s - %d (Failed to create foodstock: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
-		http.Error(w, "Failed to create foodstock", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	log.Printf("[%s] %s - %d ✓ Created foodstock ID: %d", r.Method, r.RequestURI, http.StatusCreated, foodstock.FoodID)
-	json.NewEncoder(w).Encode(foodstock)
-}
-
 // GetFoodstockHandler retrieves a single foodstock by ID
 // GET /api/foodstocks?id=1
 func GetFoodstockHandler(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +19,6 @@ func GetFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract ID from query parameter
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
 		log.Printf("[%s] %s - %d (Missing foodstock id parameter)", r.Method, r.RequestURI, http.StatusBadRequest)
@@ -104,7 +66,7 @@ func GetAllFoodstocksHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(foodstocks)
 }
 
-// UpdateFoodstockHandler updates an existing foodstock
+// UpdateFoodstockHandler manually corrects the current stock total
 // PUT /api/foodstocks?id=1
 func UpdateFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
@@ -180,4 +142,48 @@ func DeleteFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	log.Printf("[%s] %s - %d ✓ Deleted foodstock ID: %d", r.Method, r.RequestURI, http.StatusOK, id)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Foodstock deleted successfully"})
+}
+
+// GetFoodHistoryHandler retrieves the history of food imports (importfood table)
+// GET /api/food_history
+func GetFoodHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	history, err := database.GetAllImportFood()
+	if err != nil {
+		log.Printf("[%s] %s - %d (Failed to fetch food history: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
+		http.Error(w, "Failed to fetch food history", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	log.Printf("[%s] %s - %d ✓ Retrieved %d food history records", r.Method, r.RequestURI, http.StatusOK, len(history))
+	json.NewEncoder(w).Encode(history)
+}
+
+// ForceDeductStockHandler อนุญาตให้เรียก API เพื่อตัดสต็อก 20 กก. แบบแมนนวล
+// POST /api/foodstocks/force-deduct
+func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// เรียกใช้ฟังก์ชันตัดสต็อก 20 กก. (ตัวเดียวกับที่ Cron Job เรียกใช้)
+	err := database.DeductDailyFoodstock(20.0)
+	if err != nil {
+		log.Printf("[%s] %s - %d (Failed to deduct stock: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
+		http.Error(w, "Failed to deduct stock", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	log.Printf("[%s] %s - %d ✓ บังคับตัดสต็อก 20 กก. เรียบร้อยแล้ว", r.Method, r.RequestURI, http.StatusOK)
+	w.Write([]byte(`{"message": "หักสต็อกอาหาร 20 กิโลกรัม สำเร็จ", "deducted": 20}`))
 }

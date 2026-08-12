@@ -3,60 +3,13 @@ package database
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"EZ-SmartFarm_BachN/models"
 
 	"gorm.io/gorm"
 )
 
-// CreateFoodstock creates a new foodstock in the database 
-// CreateFoodstock creates a new foodstock or updates the existing one (Upsert)
-// CreateFoodstock creates a new foodstock or updates the existing one
-// CreateFoodstock creates a new foodstock or adds quantity to the existing one
-func CreateFoodstock(req *models.CreateFoodstockRequest) (*models.Foodstock, error) {
-    var existingFoodstock models.Foodstock
-
-    // 1. ค้นหาข้อมูลเดิม (ล็อคเป้าที่ ID 1 เสมอ)
-    err := DB.Where("food_id = ?", 1).First(&existingFoodstock).Error
-
-    if err == nil {
-        // 🌟 2. ถ้ามีข้อมูลเดิมอยู่ ให้เอา "ของเดิม + ของใหม่"
-        totalQuantity := existingFoodstock.QuantityCurrent + req.QuantityCurrent
-
-        // อัปเดตข้อมูลเป็นของลอตใหม่ล่าสุด
-        existingFoodstock.QuantityCurrent = totalQuantity // ค่าที่บวกกันแล้ว
-        existingFoodstock.MinQuantity     = req.MinQuantity // อัปเดตค่าแจ้งเตือน
-        existingFoodstock.ImportDate      = req.ImportDate  // อัปเดตวันรับเข้า
-        existingFoodstock.ExpiryDate      = req.ExpiryDate  // อัปเดตวันหมดอายุตามลอตใหม่
-        existingFoodstock.DateUp          = req.DateUp
-
-        // บันทึกทับลงไปใน ID 1
-        if updateErr := DB.Save(&existingFoodstock).Error; updateErr != nil {
-            log.Printf("Error updating foodstock: %v", updateErr)
-            return nil, updateErr
-        }
-        log.Printf("✓ Foodstock ID 1 Updated: Added %f, Total is now %f\n", req.QuantityCurrent, totalQuantity)
-        return &existingFoodstock, nil
-    }
-
-    // 🌟 3. ถ้าไม่มีข้อมูลเดิมเลย (เพิ่งเริ่มระบบ หรือเคยกดลบไป) ให้สร้างเป็น ID 1 ใหม่
-    newFoodstock := &models.Foodstock{
-        FoodID:          1,
-        QuantityCurrent: req.QuantityCurrent,
-        MinQuantity:     req.MinQuantity,
-        ImportDate:      req.ImportDate,
-        ExpiryDate:      req.ExpiryDate,
-        DateUp:          req.DateUp,
-    }
-
-    if createErr := DB.Create(newFoodstock).Error; createErr != nil {
-        log.Printf("Error creating foodstock: %v", createErr)
-        return nil, createErr
-    }
-
-    log.Printf("✓ Foodstock created with ID 1, Initial Quantity: %f\n", req.QuantityCurrent)
-    return newFoodstock, nil
-}
 // GetFoodstockByID retrieves a foodstock by ID
 func GetFoodstockByID(foodID int) (*models.Foodstock, error) {
 	var foodstock *models.Foodstock
@@ -85,43 +38,24 @@ func GetAllFoodstocks() ([]models.Foodstock, error) {
 	return foodstocks, nil
 }
 
-// UpdateFoodstock updates an existing foodstock
-func UpdateFoodstock(foodID int, req *models.UpdateFoodstockRequest) (*models.Foodstock, error) {
-	foodstock, err := GetFoodstockByID(foodID)
-	if err != nil {
+// UpdateFoodstock manually corrects the current stock total (ID is always locked to 1)
+func UpdateFoodstock(id int, req *models.UpdateFoodstockRequest) (*models.Foodstock, error) {
+	var foodstock models.Foodstock
+	if err := DB.First(&foodstock, id).Error; err != nil {
 		return nil, err
 	}
 
-	// Update only provided fields
-	updates := map[string]interface{}{}
-
-	if req.QuantityCurrent >= 0 {
-		updates["quantity_current"] = req.QuantityCurrent
-	}
-	if req.MinQuantity >= 0 {
-		updates["min_quantity"] = req.MinQuantity
-	}
-	if !req.ImportDate.IsZero() {
-		updates["import_date"] = req.ImportDate
-	}
-	if !req.ExpiryDate.IsZero() {
-		updates["expiry_date"] = req.ExpiryDate
-	}
+	foodstock.QuantityCurrent = req.QuantityCurrent
 	if !req.DateUp.IsZero() {
-		updates["date_up"] = req.DateUp
+		foodstock.DateUp = req.DateUp
+	} else {
+		foodstock.DateUp = time.Now()
 	}
 
-	if len(updates) == 0 {
-		return foodstock, nil
-	}
-
-	if err := DB.Model(foodstock).Updates(updates).Error; err != nil {
-		log.Printf("Error updating foodstock: %v", err)
+	if err := DB.Save(&foodstock).Error; err != nil {
 		return nil, err
 	}
-
-	log.Printf("✓ Foodstock %d updated\n", foodID)
-	return foodstock, nil
+	return &foodstock, nil
 }
 
 // DeleteFoodstock deletes a foodstock from the database
@@ -137,5 +71,41 @@ func DeleteFoodstock(foodID int) error {
 	}
 
 	log.Printf("✓ Foodstock %d deleted\n", foodID)
+	return nil
+}
+
+// DeductDailyFoodstock ทำหน้าที่ลด quantity_current ลงตามจำนวนที่กำหนด (เช่น วันละ 20)
+func DeductDailyFoodstock(amount float64) error {
+	var foodstock models.Foodstock
+
+	// 1. ดึงข้อมูลสต็อก ID 1
+	if err := DB.First(&foodstock, 1).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return fmt.Errorf("ไม่พบข้อมูลสต็อกอาหาร (ID=1)")
+		}
+		return fmt.Errorf("ดึงข้อมูลสต็อกล้มเหลว: %v", err)
+	}
+
+	// 2. เช็คว่ามีอาหารเหลือให้ตัดหรือไม่
+	if foodstock.QuantityCurrent <= 0 {
+		log.Println("⚠️ สต็อกอาหารปัจจุบันเป็น 0 ไม่สามารถตัดสต็อกเพิ่มได้")
+		return nil
+	}
+
+	// 3. หักลบจำนวนอาหาร
+	foodstock.QuantityCurrent -= amount
+
+	// 4. ดักจับกรณีหักแล้วยอดติดลบ ให้เซ็ตเป็น 0
+	if foodstock.QuantityCurrent < 0 {
+		foodstock.QuantityCurrent = 0
+	}
+	foodstock.DateUp = time.Now()
+
+	// 5. บันทึกข้อมูลกลับลง Database
+	if err := DB.Save(&foodstock).Error; err != nil {
+		return fmt.Errorf("อัปเดตสต็อกล้มเหลว: %v", err)
+	}
+
+	log.Printf("✓ ตัดสต็อกอัตโนมัติ %.2f kg คงเหลือ %.2f kg\n", amount, foodstock.QuantityCurrent)
 	return nil
 }

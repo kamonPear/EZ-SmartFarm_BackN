@@ -4,6 +4,7 @@ import "time"
 
 // CreateCoopRequest represents the request payload for creating a coop
 type CreateCoopRequest struct {
+	NameCoop         string    `json:"name_coop" binding:"required"`
 	DateAdoptAnimals time.Time `json:"date_adopt_animals" binding:"required"`
 	Amount           int       `json:"amount" binding:"required,min=1"`
 	Birthday         time.Time `json:"birthday" binding:"required"`
@@ -25,4 +26,5 @@ type CoopResponse struct {
 	Amount           int       `json:"amount"`
 	Birthday         time.Time `json:"birthday"`
 	Note             string    `json:"note"`
+	
 }

@@ -65,7 +65,8 @@ func GetHealthsByCoopID(coopID int) ([]models.Health, error) {
 		return nil, fmt.Errorf("coop not found: %v", err)
 	}
 
-	if err := DB.Preload("Coop").Where("coop_id = ?", coopID).Order("record_date DESC").Find(&hs).Error; err != nil {
+	// 🌟 แก้ "record_date" -> "date" ให้ตรงกับชื่อคอลัมน์จริงในตาราง health
+	if err := DB.Preload("Coop").Where("coop_id = ?", coopID).Order("date DESC").Find(&hs).Error; err != nil {
 		log.Printf("Error fetching health records: %v", err)
 		return nil, err
 	}
@@ -77,7 +78,8 @@ func GetHealthsByCoopID(coopID int) ([]models.Health, error) {
 func GetAllHealths() ([]models.Health, error) {
 	var hs []models.Health
 
-	if err := DB.Preload("Coop").Order("record_date DESC").Find(&hs).Error; err != nil {
+	// 🌟 แก้ "record_date" -> "date" ให้ตรงกับชื่อคอลัมน์จริงในตาราง health
+	if err := DB.Preload("Coop").Order("date DESC").Find(&hs).Error; err != nil {
 		log.Printf("Error fetching all health records: %v", err)
 		return nil, err
 	}
@@ -99,18 +101,23 @@ func UpdateHealth(id int, req *models.UpdateHealthRequest) (*models.Health, erro
 		}
 	}
 
+	// 🌟 ตรงนี้ใช้ map[string]interface{} ส่งเข้า .Updates() โดยตรง
+	// GORM จะมองว่า key ของ map คือ "ชื่อคอลัมน์จริง" ตรงๆ ไม่ได้แปลงผ่าน
+	// gorm:"column:..." ใน struct เหมือนตอนใช้ struct (เช่นใน CreateHealth)
+	// จึงต้องใช้ชื่อคอลัมน์จริง (number_healthy, number_poor_health, date)
+	// ไม่ใช่ชื่อ field/JSON (healthy, poor_health, record_date)
 	updates := map[string]interface{}{}
 	if req.CoopID > 0 {
 		updates["coop_id"] = req.CoopID
 	}
 	if req.Healthy >= 0 {
-		updates["healthy"] = req.Healthy
+		updates["number_healthy"] = req.Healthy
 	}
 	if req.PoorHealth >= 0 {
-		updates["poor_health"] = req.PoorHealth
+		updates["number_poor_health"] = req.PoorHealth
 	}
 	if !req.RecordDate.IsZero() {
-		updates["record_date"] = normalizeHealthDate(req.RecordDate)
+		updates["date"] = normalizeHealthDate(req.RecordDate)
 	}
 	if req.Note != "" {
 		updates["note"] = req.Note
@@ -154,4 +161,55 @@ func DeleteHealthsByCoopID(coopID int) error {
 
 	fmt.Printf("✓ All health records for coop %d deleted\n", coopID)
 	return nil
+}
+
+
+// ==========================================
+// 🌟 ส่วนแจ้งเตือนตรวจสุขภาพ (Notifications)
+// ==========================================
+
+// HealthNotiDB โครงสร้างชั่วคราวเพื่อรับค่าจาก Database (ใช้ตัวเลข CoopID)
+type HealthNotiDB struct {
+	CoopID  int `gorm:"column:coop_id"`
+	IsToday int `gorm:"column:is_today"`
+}
+
+// HealthNotification โครงสร้างข้อมูลสำหรับแปลงตัวเลขเป็นข้อความก่อนส่งไปให้แอป
+type HealthNotification struct {
+	CoopName string `json:"coop_name"`
+	IsToday  bool   `json:"is_today"`
+}
+
+// GetHealthCheckNotifications ดึงข้อมูลคอกที่ต้องตรวจสุขภาพของ "วันนี้" และ "พรุ่งนี้"
+func GetHealthCheckNotifications() ([]HealthNotification, error) {
+	var dbResults []HealthNotiDB
+
+	now := time.Now().In(time.Local)
+	todayStr := now.Format("2006-01-02")
+	tomorrowStr := now.AddDate(0, 0, 1).Format("2006-01-02")
+
+	// ดึง coop_id มาโดยตรงจากตาราง health
+	query := `
+		SELECT coop_id, 
+		       CASE WHEN DATE(date) = ? THEN 1 ELSE 0 END as is_today 
+		FROM health
+		WHERE DATE(date) = ? OR DATE(date) = ?
+	`
+	
+	err := DB.Raw(query, todayStr, todayStr, tomorrowStr).Scan(&dbResults).Error
+	if err != nil {
+		log.Printf("Error fetching health check notifications: %v", err)
+		return nil, err
+	}
+
+	// แปลงตัวเลข CoopID (เช่น 1) ให้เป็นข้อความ ("1") ส่งกลับให้แอป
+	var notifications []HealthNotification
+	for _, r := range dbResults {
+		notifications = append(notifications, HealthNotification{
+			CoopName: fmt.Sprintf("%d", r.CoopID), 
+			IsToday:  r.IsToday == 1,
+		})
+	}
+
+	return notifications, nil
 }

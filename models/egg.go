@@ -6,6 +6,7 @@ import "time"
 type Egg struct {
 	EggID          int       `gorm:"primaryKey;autoIncrement;column:egg_id;type:int" json:"egg_id"`
 	CoopID         int       `gorm:"column:coop_id;not null;type:int" json:"coop_id"`
+	NameCoop       string    `gorm:"column:name_coop;type:varchar(100);index" json:"name_coop"`
 	DateCollectEgg time.Time `gorm:"column:date_collect_egg" json:"date_collect_egg"`
 	NumberEgg      int       `gorm:"column:number_egg" json:"number_egg"`
 	Note           string    `gorm:"column:note;type:text" json:"note"`

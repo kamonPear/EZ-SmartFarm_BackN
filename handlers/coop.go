@@ -28,14 +28,19 @@ func CreateCoopHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate required fields
-	if req.DateAdoptAnimals.IsZero() || req.Amount == 0 || req.Birthday.IsZero() {
+	if req.NameCoop == "" || req.DateAdoptAnimals.IsZero() || req.Amount == 0 || req.Birthday.IsZero() {
 		log.Printf("[%s] %s - %d (Missing required fields)", r.Method, r.RequestURI, http.StatusBadRequest)
-		http.Error(w, "Missing required fields: date_adopt_animals, amount, birthday", http.StatusBadRequest)
+		http.Error(w, "Missing required fields: name_coop, date_adopt_animals, amount, birthday", http.StatusBadRequest)
 		return
 	}
 
 	coop, err := database.CreateCoop(&req)
 	if err != nil {
+		if database.IsDuplicateNameCoop(err) {
+			log.Printf("[%s] %s - %d (Duplicate coop name)", r.Method, r.RequestURI, http.StatusConflict)
+			http.Error(w, "Coop name already exists", http.StatusConflict)
+			return
+		}
 		log.Printf("[%s] %s - %d (Failed to create coop: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to create coop", http.StatusInternalServerError)
 		return

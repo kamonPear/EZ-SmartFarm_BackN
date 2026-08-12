@@ -2,16 +2,11 @@ package models
 
 import "time"
 
-// Foodstock represents food inventory/storage
+// Foodstock represents the current running total of food in stock (single row, kept up to date automatically)
 type Foodstock struct {
 	FoodID          int       `gorm:"primaryKey;autoIncrement;column:food_id;type:int" json:"food_id"`
-	QuantityCurrent float64   `gorm:"column:quantity_current;type:decimal(10,2)" json:"quantity_current"`
-	MinQuantity     float64   `gorm:"column:min_quantity;type:decimal(10,2);default:0" json:"min_quantity"`
-	ImportDate      time.Time `gorm:"column:import_date" json:"import_date"`
-	ExpiryDate      time.Time `gorm:"column:expiry_date" json:"expiry_date"`
-	DateUp          time.Time `gorm:"column:date_up" json:"date_up"`
-	CreatedAt       time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt       time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	QuantityCurrent float64   `gorm:"column:quantity_current;type:decimal(10,2);check:quantity_current >= 0" json:"quantity_current"`
+	DateUp          time.Time `gorm:"column:date_up;type:date;not null" json:"date_up"`
 }
 
 // TableName specifies the table name for Foodstock model

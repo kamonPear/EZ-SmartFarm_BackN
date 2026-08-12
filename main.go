@@ -10,32 +10,40 @@ import (
 
 	"EZ-SmartFarm_BachN/config"
 	"EZ-SmartFarm_BachN/database"
-	"EZ-SmartFarm_BachN/routes"
+	"EZ-SmartFarm_BachN/routes"     
+	"EZ-SmartFarm_BachN/scheduler" // 🌟 1. เพิ่ม import scheduler
+	"EZ-SmartFarm_BachN/services"
 )
 
 func main() {
-	// Load configuration
 	cfg := config.LoadConfig()
 
-	// Initialize database
 	if err := database.InitDatabase(cfg.Database); err != nil {
 		log.Printf("Warning: Database connection failed: %v", err)
-		// Continue running server even if DB fails for development
 	} else {
-		// Run migrations if database connected successfully
 		if err := database.MigrateModels(database.GetDB()); err != nil {
 			log.Printf("Warning: Migration failed: %v", err)
 		}
 	}
 
-	// Setup routes
-	routes.SetupRoutes()
+	db := database.GetDB()
+	
+	// จัดการ Routes ทั้งหมด (รวมถึง route สำหรับกดตัดสต็อกด้วยมือ)
+	routes.SetupRoutes(db)
 
-	// Start server
+	// =========================================
+	// เริ่มการทำงานของ Background Tasks
+	// =========================================
+	go services.StartMQTTWorker()
+	go services.StartOfflineChecker()
+	
+	// 🌟 2. เริ่มการทำงานของ Cron Job สำหรับตัดสต็อกอัตโนมัติ
+	scheduler.SetupJobs() 
+	// =========================================
+
 	port := ":" + cfg.ServerPort
 	fmt.Printf("Server starting on port %s...\n", cfg.ServerPort)
 
-	// Handle graceful shutdown
 	go func() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -45,7 +53,22 @@ func main() {
 		os.Exit(0)
 	}()
 
-	if err := http.ListenAndServe(port, nil); err != nil {
+	if err := http.ListenAndServe(port, enableCORS(http.DefaultServeMux)); err != nil {
 		fmt.Println("Server error:", err)
 	}
+}
+
+func enableCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
