@@ -1,6 +1,7 @@
 package services
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -20,10 +21,28 @@ type SensorPayload struct {
 func StartMQTTWorker() {
 	brokerHost := getEnv("MQTT_BROKER_HOST", "192.168.0.102")
 	brokerPort := getEnv("MQTT_BROKER_PORT", "1883")
+	username := getEnv("MQTT_USERNAME", "")
+	password := getEnv("MQTT_PASSWORD", "")
+	useTLS := getEnv("MQTT_USE_TLS", "false") == "true"
+
+	scheme := "tcp"
+	if useTLS {
+		scheme = "tls"
+	}
 
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("tcp://%s:%s", brokerHost, brokerPort))
+	opts.AddBroker(fmt.Sprintf("%s://%s:%s", scheme, brokerHost, brokerPort))
 	opts.SetClientID("ez_farm_mqtt_worker")
+
+	if username != "" {
+		opts.SetUsername(username)
+	}
+	if password != "" {
+		opts.SetPassword(password)
+	}
+	if useTLS {
+		opts.SetTLSConfig(&tls.Config{})
+	}
 
 	opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
 		var payload SensorPayload

@@ -13,5 +13,6 @@ type CreateImportFoodRequest struct {
 type ImportFoodResponse struct {
 	LotID        int       `json:"lot_id"`
 	ImportVolume int       `json:"import_volume"`
+	ImportDate   time.Time `json:"import_date"`
 	ExpiryDate   time.Time `json:"expiry_date"`
 }

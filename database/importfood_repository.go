@@ -13,6 +13,7 @@ import (
 func CreateImportFood(req *models.CreateImportFoodRequest) (*models.ImportFood, error) {
 	lot := &models.ImportFood{
 		ImportVolume: req.ImportVolume,
+		ImportDate:   time.Now(),
 		ExpiryDate:   req.ExpiryDate,
 	}
 
@@ -70,4 +71,14 @@ func GetAllImportFood() ([]models.ImportFood, error) {
 		return nil, err
 	}
 	return lots, nil
+}
+
+// DeleteAllImportFood wipes the entire food import history (used when clearing the foodstock)
+func DeleteAllImportFood() error {
+	if err := DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&models.ImportFood{}).Error; err != nil {
+		log.Printf("Error deleting import food history: %v", err)
+		return err
+	}
+	log.Println("✓ Import food history cleared")
+	return nil
 }
