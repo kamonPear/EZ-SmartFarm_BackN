@@ -78,7 +78,7 @@ func StartOfflineChecker() {
 		time.Sleep(5 * time.Second)
 		db := database.GetDB()
 		if db != nil {
-			db.Exec("UPDATE devices SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND")
+			db.Exec("UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND")
 		}
 	}
 }
