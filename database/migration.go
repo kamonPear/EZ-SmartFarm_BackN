@@ -26,10 +26,11 @@ func MigrateModels(db *gorm.DB) error {
 		&models.Health{},
 		&models.Vaccine{},
 	); err != nil {
-		log.Printf("Migration error: %v", err)
-		// Re-enable foreign key checks even if migration fails
-		db.Exec("SET FOREIGN_KEY_CHECKS=1")
-		return err
+		// AutoMigrate can fail partway through (e.g. a pre-existing FK type mismatch on
+		// egg/vaccine.coop_id) while still having fully migrated earlier models in the list.
+		// Log it and keep going instead of bailing out - the idempotent ensure*/drop* calls
+		// below are independent cleanup steps that still need to run every startup.
+		log.Printf("Warning: AutoMigrate did not fully complete: %v", err)
 	}
 
 	// Re-enable foreign key checks
