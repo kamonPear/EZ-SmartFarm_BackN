@@ -47,11 +47,12 @@ func MigrateModels(db *gorm.DB) error {
 	ensureForeignKey(db, "device", "fk_name_coop_devices", "ALTER TABLE `device` ADD CONSTRAINT `fk_name_coop_devices` FOREIGN KEY (`name_coop`) REFERENCES `coop`(`name_coop`)")
 
 	// device.name used to be unique so it could double as a natural key for sensor_log.
-	// That blocked placing more than one sensor of the same type in a coop, so both the FK
-	// and the unique index are dropped here (idempotent - only acts if still present from
-	// an earlier deploy). (coop_id, slot_index) is the real identity for a placed device now.
-	ensureForeignKeyDropped(db, "sensor_log", "fk_device_name_sensor_logs")
-	ensureIndexDropped(db, "device", "uq_device_name")
+	// That blocked placing more than one sensor of the same type in a coop. Drop every
+	// unique index/FK still touching it, however it got created - the named uq_device_name
+	// we added by hand, but also anything GORM's own AutoMigrate created automatically back
+	// when the struct tag still said `unique` (that one isn't necessarily named the same).
+	// (coop_id, slot_index) is the real identity for a placed device now.
+	dropAllUniqueIndexesOnColumn(db, "device", "name")
 
 	fmt.Println("✓ All tables migrated successfully")
 	return nil
@@ -126,5 +127,42 @@ func ensureForeignKeyDropped(db *gorm.DB, table, constraintName string) {
 	}
 	if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` DROP FOREIGN KEY `%s`", table, constraintName)).Error; err != nil {
 		log.Printf("Warning: could not drop foreign key %s: %v", constraintName, err)
+	}
+}
+
+// dropAllUniqueIndexesOnColumn removes every unique index touching the given column (except PRIMARY),
+// and any foreign key elsewhere in the schema that references it - MySQL refuses to drop a unique
+// index that a FK still depends on. This is more thorough than ensureIndexDropped/ensureForeignKeyDropped
+// with a hardcoded name because GORM's own AutoMigrate can create a unique index under a name we don't
+// control (e.g. from before the `unique` struct tag was removed).
+func dropAllUniqueIndexesOnColumn(db *gorm.DB, table, column string) {
+	type fkRef struct {
+		TableName      string
+		ConstraintName string
+	}
+	var refs []fkRef
+	if err := db.Raw(
+		`SELECT TABLE_NAME, CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
+		 WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME = ? AND REFERENCED_COLUMN_NAME = ?`,
+		table, column,
+	).Scan(&refs).Error; err != nil {
+		log.Printf("Warning: could not check FKs referencing %s.%s: %v", table, column, err)
+	} else {
+		for _, ref := range refs {
+			ensureForeignKeyDropped(db, ref.TableName, ref.ConstraintName)
+		}
+	}
+
+	var indexNames []string
+	if err := db.Raw(
+		`SELECT DISTINCT INDEX_NAME FROM information_schema.STATISTICS
+		 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? AND NON_UNIQUE = 0 AND INDEX_NAME != 'PRIMARY'`,
+		table, column,
+	).Scan(&indexNames).Error; err != nil {
+		log.Printf("Warning: could not list unique indexes on %s.%s: %v", table, column, err)
+		return
+	}
+	for _, idx := range indexNames {
+		ensureIndexDropped(db, table, idx)
 	}
 }
