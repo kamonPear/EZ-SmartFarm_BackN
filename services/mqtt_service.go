@@ -31,9 +31,11 @@ func StartMQTTWorker() {
 		scheme = "tls"
 	}
 
+	// ปรับ client ID ผ่าน MQTT_CLIENT_ID ได้เวลารันทดสอบบนเครื่อง (local) พร้อมกับที่ Render ยังรันอยู่
+	// เพราะ broker อนุญาตแค่ 1 session ต่อ client ID เดียวกัน - ถ้าใช้ ID ซ้ำกัน อีกฝั่งจะหลุดการเชื่อมต่อทันที
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(fmt.Sprintf("%s://%s:%s", scheme, brokerHost, brokerPort))
-	opts.SetClientID("ez_farm_mqtt_worker")
+	opts.SetClientID(getEnv("MQTT_CLIENT_ID", "ez_farm_mqtt_worker"))
 
 	if username != "" {
 		opts.SetUsername(username)
@@ -46,6 +48,8 @@ func StartMQTTWorker() {
 	}
 
 	opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
+		fmt.Printf("📥 [MQTT] Received on %s: %s\n", msg.Topic(), string(msg.Payload()))
+
 		var payload SensorPayload
 		if err := json.Unmarshal(msg.Payload(), &payload); err != nil {
 			fmt.Println("❌ [MQTT Error] JSON ไม่ถูกต้อง:", err)
@@ -55,15 +59,24 @@ func StartMQTTWorker() {
 		// 🚀 โยน Payload ไปให้ฟังก์ชันในไฟล์ sensor_log.go เป็นคนจัดการฐานข้อมูล
 		ProcessAndSaveSensorLog(payload)
 	})
+	opts.SetOnConnectHandler(func(client mqtt.Client) {
+		fmt.Println("✅ [MQTT] Connected (or reconnected) to broker")
+		if token := client.Subscribe("farm/sensors/data", 1, nil); token.Wait() && token.Error() != nil {
+			fmt.Println("❌ [MQTT Subscribe Error]", token.Error())
+		} else {
+			fmt.Println("📡 Subscribed to 'farm/sensors/data'")
+		}
+	})
+	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
+		fmt.Println("⚠️ [MQTT] Connection lost:", err)
+	})
+	opts.SetAutoReconnect(true)
 
 	client := mqtt.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		fmt.Println("❌ [MQTT Connection Error]", token.Error())
 		return
 	}
-
-	client.Subscribe("farm/sensors/data", 1, nil)
-	fmt.Println("📡 Start MQTT Worker: Subscribed to 'farm/sensors/data'")
 }
 
 func getEnv(key, defaultValue string) string {
