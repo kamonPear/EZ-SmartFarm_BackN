@@ -42,10 +42,16 @@ func MigrateModels(db *gorm.DB) error {
 	// AutoMigrate doesn't manage this on its own, so add it explicitly and idempotently.
 	ensureUniqueIndex(db, "coop", "uq_coop_name_coop", "ALTER TABLE `coop` ADD UNIQUE KEY `uq_coop_name_coop` (`name_coop`)")
 
-	ensureForeignKey(db, "egg", "fk_name_coop_eggs", "ALTER TABLE `egg` ADD CONSTRAINT `fk_name_coop_eggs` FOREIGN KEY (`name_coop`) REFERENCES `coop`(`name_coop`)")
-	ensureForeignKey(db, "health", "fk_name_coop_healths", "ALTER TABLE `health` ADD CONSTRAINT `fk_name_coop_healths` FOREIGN KEY (`name_coop`) REFERENCES `coop`(`name_coop`)")
-	ensureForeignKey(db, "vaccine", "fk_name_coop_vaccines", "ALTER TABLE `vaccine` ADD CONSTRAINT `fk_name_coop_vaccines` FOREIGN KEY (`name_coop`) REFERENCES `coop`(`name_coop`)")
-	ensureForeignKey(db, "device", "fk_name_coop_devices", "ALTER TABLE `device` ADD CONSTRAINT `fk_name_coop_devices` FOREIGN KEY (`name_coop`) REFERENCES `coop`(`name_coop`)")
+	// The name_coop FKs below turned out to be unreliable: app code never actually populates
+	// name_coop on child rows (it's always left as ""), and multiple coops can have a blank
+	// name too, so unrelated rows across different coops end up referencing the same empty
+	// value. That breaks deleting any coop whose name_coop is "" - MySQL rejects it with a
+	// FK violation even though DeleteCoop already cascades correctly via the real coop_id
+	// relationships. Drop these FKs instead of re-creating them; coop_id is the source of truth.
+	ensureForeignKeyDropped(db, "egg", "fk_name_coop_eggs")
+	ensureForeignKeyDropped(db, "health", "fk_name_coop_healths")
+	ensureForeignKeyDropped(db, "vaccine", "fk_name_coop_vaccines")
+	ensureForeignKeyDropped(db, "device", "fk_name_coop_devices")
 
 	// device.name used to be unique so it could double as a natural key for sensor_log.
 	// That blocked placing more than one sensor of the same type in a coop. Drop every
