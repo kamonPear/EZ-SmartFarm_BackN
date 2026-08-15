@@ -20,9 +20,9 @@ func HandleArduinoUpload(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		// 2. ค้นหา Device ในฐานข้อมูล
+		// 2. ค้นหา Device ในฐานข้อมูล (ใช้ slot_index จับคู่แทนชื่อ เพราะตอนนี้ชื่อซ้ำกันได้ในคนละ slot)
 		var device models.Device
-		result := db.Where("coop_id = ? AND name = ?", payload.CoopID, payload.DeviceName).First(&device)
+		result := db.Where("coop_id = ? AND slot_index = ?", payload.CoopID, payload.SlotIndex).First(&device)
 
 		// 3. ตรวจสอบผลลัพธ์
 		if result.Error != nil {

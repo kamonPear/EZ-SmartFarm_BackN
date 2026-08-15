@@ -14,7 +14,8 @@ import (
 // โครงสร้างข้อมูลที่รับมาจาก Arduino
 type SensorPayload struct {
 	CoopID     int     `json:"coop_id"`
-	DeviceName string  `json:"device_name"`
+	SlotIndex  int     `json:"slot_index"`  // ตำแหน่งช่องที่วางอุปกรณ์ไว้ (ใช้จับคู่อุปกรณ์แทนชื่อ เพราะชื่อซ้ำกันได้)
+	DeviceName string  `json:"device_name"` // ใช้แค่ log/debug ไม่ใช้จับคู่แล้ว
 	Value      float64 `json:"value"`
 }
 

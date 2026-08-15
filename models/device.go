@@ -9,7 +9,7 @@ type Device struct {
     CoopID        int32       `gorm:"column:coop_id;index;not null;type:int" json:"coop_id"`
     NameCoop      string      `gorm:"column:name_coop;type:varchar(100);index" json:"name_coop"`
     SlotIndex     int32       `gorm:"column:slot_index;type:int;not null" json:"slot_index"`
-    Name          string      `gorm:"column:name;type:varchar(100);unique" json:"name"`
+    Name          string      `gorm:"column:name;type:varchar(100);index" json:"name"`
     Icon          string      `gorm:"column:icon;type:varchar(255)" json:"icon"`            
     DeviceType    string      `gorm:"column:device_type;type:varchar(50)" json:"device_type"`
     CurrentStatus string      `gorm:"column:current_status;type:varchar(20);default:'Offline'" json:"current_status"`
@@ -56,7 +56,8 @@ type LayoutPayload struct {
 // เพิ่ม Struct นี้เข้าไป เพื่อใช้รับ JSON จาก Arduino
 type ArduinoPayload struct {
 	CoopID      int     `json:"coop_id"`
-	DeviceName  string  `json:"device_name"` // ชื่อเซ็นเซอร์ เช่น MQ-135
+	SlotIndex   int     `json:"slot_index"`  // ตำแหน่งช่องที่วางอุปกรณ์ไว้ (ใช้จับคู่อุปกรณ์แทนชื่อ เพราะชื่อซ้ำกันได้)
+	DeviceName  string  `json:"device_name"` // ชื่อเซ็นเซอร์ เช่น MQ-135 (ใช้แค่ log/debug ไม่ใช้จับคู่แล้ว)
 	SensorValue float64 `json:"sensor_value"`
 }
 

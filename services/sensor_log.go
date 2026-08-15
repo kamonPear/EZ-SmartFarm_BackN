@@ -16,12 +16,12 @@ func ProcessAndSaveSensorLog(payload SensorPayload) {
 		return
 	}
 
-	// 1. ค้นหา Device จากฐานข้อมูลด้วย CoopID และ ชื่ออุปกรณ์
+	// 1. ค้นหา Device จากฐานข้อมูลด้วย CoopID และ slot_index (ไม่ใช้ชื่อแล้ว เพราะชื่อซ้ำกันได้ในคนละ slot)
 	var device models.Device
-	result := db.Where("coop_id = ? AND name = ?", payload.CoopID, payload.DeviceName).First(&device)
+	result := db.Where("coop_id = ? AND slot_index = ?", payload.CoopID, payload.SlotIndex).First(&device)
 
 	if result.Error != nil {
-		fmt.Printf("⚠️ [DB Warning] หาอุปกรณ์ '%s' ในคอก %d ไม่เจอ\n", payload.DeviceName, payload.CoopID)
+		fmt.Printf("⚠️ [DB Warning] หาอุปกรณ์ที่ช่อง %d ในคอก %d ไม่เจอ (ชื่อที่ส่งมา: '%s')\n", payload.SlotIndex, payload.CoopID, payload.DeviceName)
 		return
 	}
 
