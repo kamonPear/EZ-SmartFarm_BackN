@@ -11,39 +11,25 @@ import (
 // CreateVaccine creates a new vaccine administration record for a coop.
 // The coop must already be loaded (via GetCoopByID) so name_coop/birthday can be
 // copied onto the vaccine row to satisfy the fk_name_coop_vaccines constraint.
-//
-// The vaccine table has a legacy "name" column alongside "name_vaccine" that is
-// NOT NULL with no default, but models.Vaccine only maps to "name_vaccine" - a
-// struct-based DB.Create() leaves "name" unset and MySQL rejects the insert
-// (Error 1364). Inserting via a column map (matching the working insert in the
-// vaccine-alerts PUT handler) lets both columns be set explicitly.
 func CreateVaccine(req *models.CreateVaccineRequest, coop *models.Coop) (*models.Vaccine, error) {
-	row := map[string]interface{}{
-		"coop_id":         req.CoopID,
-		"name_coop":       coop.NameCoop,
-		"birthday":        coop.Birthday,
-		"name_vaccine":    req.Name,
-		"name":            req.Name,
-		"record_date":     req.RecordDate,
-		"method":          req.Method,
-		"recommended_age": req.RecommendedAge,
-		"note":            req.Note,
+	vaccine := models.Vaccine{
+		CoopID:         req.CoopID,
+		NameCoop:       coop.NameCoop,
+		Birthday:       &coop.Birthday,
+		Name:           req.Name,
+		RecordDate:     req.RecordDate,
+		Method:         req.Method,
+		RecommendedAge: req.RecommendedAge,
+		Note:           req.Note,
 	}
 
-	if err := DB.Table("vaccine").Create(&row).Error; err != nil {
+	if err := DB.Create(&vaccine).Error; err != nil {
 		log.Printf("Error creating vaccine: %v", err)
 		return nil, err
 	}
 
-	id, _ := row["@id"].(int64)
-	vaccine, err := GetVaccineByID(int(id))
-	if err != nil {
-		log.Printf("Error re-fetching created vaccine ID %d: %v", id, err)
-		return nil, err
-	}
-
 	fmt.Printf("✓ Vaccine created with ID: %d\n", vaccine.VaccineID)
-	return vaccine, nil
+	return &vaccine, nil
 }
 
 // GetVaccineByID retrieves a vaccine record by vaccine ID
@@ -76,7 +62,7 @@ func GetVaccinesByCoopID(coopID int) ([]models.Vaccine, error) {
 func GetAllVaccines() ([]models.Vaccine, error) {
 	var vaccines []models.Vaccine
 
-	err := DB.Debug().Preload("Coop").Table("vaccine").Find(&vaccines).Error
+	err := DB.Debug().Preload("Coop").Find(&vaccines).Error
 
 	if err != nil {
 		log.Printf("Error retrieving all vaccines: %v", err)

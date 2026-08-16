@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 // Vaccine โครงสร้างสำหรับเก็บประวัติการฉีดวัคซีนจริงลงฐานข้อมูล
 type Vaccine struct {
@@ -12,6 +16,9 @@ type Vaccine struct {
 	Birthday       *time.Time `gorm:"column:birthday;type:date" json:"birthday"`
 	// ✅ ตรงนี้คุณแก้มาถูกต้องแล้ว
 	Name           string     `gorm:"column:name_vaccine;type:varchar(50);not null" json:"name"`
+	// LegacyName เก็บค่าเดียวกับ Name เพื่อเติมคอลัมน์ "name" (ของเดิม, NOT NULL, ไม่มี default)
+	// ที่ยังหลงเหลืออยู่ในตาราง - ถ้าไม่เซ็ตตัวนี้ INSERT ผ่าน struct ปกติจะโดน MySQL error 1364
+	LegacyName     string     `gorm:"column:name;type:varchar(50);not null" json:"-"`
 	RecordDate     time.Time  `gorm:"column:record_date;type:date;not null" json:"record_date"`
 	Method         string     `gorm:"column:method;type:varchar(100);not null" json:"method"`
 	RecommendedAge string     `gorm:"column:recommended_age;type:varchar(20);not null" json:"recommended_age"`
@@ -23,6 +30,14 @@ type Vaccine struct {
 
 func (Vaccine) TableName() string {
 	return "vaccine"
+}
+
+// BeforeSave keeps the legacy "name" column in sync with Name so every GORM
+// write path (Create/Save/Updates on the struct) satisfies the NOT NULL
+// constraint without callers having to remember to set LegacyName themselves.
+func (v *Vaccine) BeforeSave(tx *gorm.DB) error {
+	v.LegacyName = v.Name
+	return nil
 }
 
 // MedicineSchedule โครงสร้างตารางเงื่อนไขรอบการให้ยา/วัคซีนตามเกณฑ์อายุ

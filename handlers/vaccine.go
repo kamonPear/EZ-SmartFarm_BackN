@@ -344,7 +344,7 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 🛑 ลบประวัติการให้วัคซีนที่เคยมีอยู่ในตารางจริง (vaccine) ด้วย
-		database.DB.Table("vaccine").Where("name_vaccine = ?", vaccineName).Delete(nil)
+		database.DB.Where("name_vaccine = ?", vaccineName).Delete(&models.Vaccine{})
 
 		w.WriteHeader(http.StatusOK)
 		log.Printf("[%s] %s - %d ✓ Deleted vaccine schedule: %s", r.Method, r.RequestURI, http.StatusOK, vaccineName)
@@ -393,26 +393,26 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 
 		if body.IsCompleted {
 			var count int64
-			database.DB.Table("vaccine").Where("coop_id = ? AND name_vaccine = ?", coopID, vaccineName).Count(&count)
+			database.DB.Model(&models.Vaccine{}).Where("coop_id = ? AND name_vaccine = ?", coopID, vaccineName).Count(&count)
 			if count == 0 {
-				err := database.DB.Table("vaccine").Create(map[string]interface{}{
-					"coop_id":         coopID,
-					"name_vaccine":    vaccineName,
-					"method":          body.Method,
-					"recommended_age": strconv.Itoa(body.ChickenAge),
-					"note":            body.Note,
-					"record_date":     time.Now(),
-					"name":            vaccineName,
-					"birthday":        time.Now(),
-				}).Error
-				if err != nil {
+				now := time.Now()
+				vaccine := models.Vaccine{
+					CoopID:         coopID,
+					Name:           vaccineName,
+					Method:         body.Method,
+					RecommendedAge: strconv.Itoa(body.ChickenAge),
+					Note:           body.Note,
+					RecordDate:     now,
+					Birthday:       &now,
+				}
+				if err := database.DB.Create(&vaccine).Error; err != nil {
 					log.Printf("Failed to create vaccine record: %v", err)
 					http.Error(w, "Failed to save status", http.StatusInternalServerError)
 					return
 				}
 			}
 		} else {
-			err := database.DB.Table("vaccine").Where("coop_id = ? AND name_vaccine = ?", coopID, vaccineName).Delete(nil).Error
+			err := database.DB.Where("coop_id = ? AND name_vaccine = ?", coopID, vaccineName).Delete(&models.Vaccine{}).Error
 			if err != nil {
 				log.Printf("Failed to delete vaccine record: %v", err)
 				http.Error(w, "Failed to delete status", http.StatusInternalServerError)
@@ -460,7 +460,7 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 		VaccineName string `gorm:"column:name_vaccine"`
 	}
 	var histories []VaccineHistory
-	database.DB.Table("vaccine").Select("coop_id, name_vaccine").Find(&histories)
+	database.DB.Model(&models.Vaccine{}).Select("coop_id, name_vaccine").Find(&histories)
 
 	completedMap := make(map[string]bool)
 	for _, h := range histories {
@@ -673,7 +673,7 @@ func UpdateCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 🌟 อัปเดตชื่อในตารางประวัติจริง (vaccine) ด้วย เผื่อผู้ใช้แก้ไขชื่อวัคซีน
 	if body.Name != oldName {
-		database.DB.Table("vaccine").Where("name_vaccine = ?", oldName).Updates(map[string]interface{}{
+		database.DB.Model(&models.Vaccine{}).Where("name_vaccine = ?", oldName).Updates(map[string]interface{}{
 			"name_vaccine": body.Name,
 			"name":         body.Name,
 		})
