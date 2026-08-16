@@ -138,17 +138,10 @@ func DeleteFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// เคลียร์สต็อกทั้งหมด = ล้างประวัติการนำเข้า (importfood) ไปด้วย ไม่ให้ค้างเป็นข้อมูลกำพร้า
-	if err := database.DeleteAllImportFood(); err != nil {
-		log.Printf("[%s] %s - %d (Failed to clear import food history: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
-		http.Error(w, "Failed to clear import food history", http.StatusInternalServerError)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	log.Printf("[%s] %s - %d ✓ Deleted foodstock ID: %d and cleared import history", r.Method, r.RequestURI, http.StatusOK, id)
-	json.NewEncoder(w).Encode(map[string]string{"message": "Foodstock and import history deleted successfully"})
+	log.Printf("[%s] %s - %d ✓ Deleted foodstock ID: %d", r.Method, r.RequestURI, http.StatusOK, id)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Foodstock deleted successfully"})
 }
 
 // GetFoodHistoryHandler retrieves the history of food imports (importfood table)
