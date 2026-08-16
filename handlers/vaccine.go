@@ -306,6 +306,7 @@ type CalendarAlertResponse struct {
 	VaccineName   string `json:"vaccine_name"`
 	InjectionType string `json:"injection_type"`
 	IsCompleted   bool   `json:"is_completed"`
+	IsOverdue     bool   `json:"is_overdue"`
 	ChickenAge    int    `json:"chicken_age"`
 	Description   string `json:"description"`
 }
@@ -479,9 +480,10 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 			dueDate := coop.Birthday.AddDate(0, 0, schedule.MinAgeDays)
 			alertID := strconv.Itoa(coop.CoopID) + "_" + schedule.Name
 
-			if dueDate.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
-				continue 
-			}
+			// วันครบกำหนดคำนวณจากวันเกิดของไก่ ถ้ามันตกก่อนวันที่รับไก่เข้าคอก
+			// แปลว่าเลยกำหนดฉีดไปแล้วตั้งแต่ก่อนเริ่มติดตามในคอกนี้ - เดิมจะซ่อนทิ้งไปเลย
+			// ตอนนี้เปลี่ยนมาโชว์แทน แต่ติดธง is_overdue ไว้ให้แอปแสดงผลต่างจากรายการปกติ
+			isOverdue := dueDate.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02")
 
 			isDone := completedMap[alertID]
 
@@ -492,6 +494,7 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 				VaccineName:   schedule.Name,
 				InjectionType: schedule.Method,
 				IsCompleted:   isDone,
+				IsOverdue:     isOverdue,
 				ChickenAge:    schedule.MinAgeDays,
 				Description:   schedule.Description,
 			})
