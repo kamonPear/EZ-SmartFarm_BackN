@@ -3,8 +3,9 @@ package models
 import "time"
 
 // CreateImportFoodRequest represents the request payload for recording a new food import lot.
-// Creating an import lot also adds ImportVolume onto the current Foodstock total.
+// Creating an import lot also adds ImportVolume onto the current Foodstock total for FoodType.
 type CreateImportFoodRequest struct {
+	FoodType     string    `json:"food_type" binding:"required"`
 	ImportVolume int       `json:"import_volume" binding:"required,min=0"`
 	ExpiryDate   time.Time `json:"expiry_date" binding:"required"`
 }
@@ -12,6 +13,7 @@ type CreateImportFoodRequest struct {
 // ImportFoodResponse represents the response payload for an import food lot
 type ImportFoodResponse struct {
 	LotID        int       `json:"lot_id"`
+	FoodType     string    `json:"food_type"`
 	ImportVolume int       `json:"import_volume"`
 	ImportDate   time.Time `json:"import_date"`
 	ExpiryDate   time.Time `json:"expiry_date"`

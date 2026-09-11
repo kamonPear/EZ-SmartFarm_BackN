@@ -11,3 +11,13 @@ type CreateVaccineRequest struct {
 	RecordDate     time.Time `json:"record_date" binding:"required"`
 	Note           string    `json:"note"`
 }
+
+// UpdateVaccineRequest represents the payload for updating a vaccine record.
+// Fields left zero-valued are left unchanged.
+type UpdateVaccineRequest struct {
+	Name           string    `json:"name"`
+	Method         string    `json:"method"`
+	RecommendedAge string    `json:"recommended_age"`
+	RecordDate     time.Time `json:"record_date"`
+	Note           string    `json:"note"`
+}

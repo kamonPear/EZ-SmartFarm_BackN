@@ -13,6 +13,7 @@ type CreateCoopRequest struct {
 
 // UpdateCoopRequest represents the request payload for updating a coop
 type UpdateCoopRequest struct {
+	NameCoop         string    `json:"name_coop"`
 	DateAdoptAnimals time.Time `json:"date_adopt_animals"`
 	Amount           int       `json:"amount" binding:"min=1"`
 	Birthday         time.Time `json:"birthday"`
@@ -26,5 +27,4 @@ type CoopResponse struct {
 	Amount           int       `json:"amount"`
 	Birthday         time.Time `json:"birthday"`
 	Note             string    `json:"note"`
-	
 }

@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"EZ-SmartFarm_BachN/database"
+	"EZ-SmartFarm_BachN/models"
 	"github.com/robfig/cron/v3"
 )
 
@@ -15,12 +16,14 @@ func SetupJobs() {
 	// ตั้งเวลา: ทำงานทุกวัน เวลา 00:00 น. (เที่ยงคืน)
 	// เปลี่ยนเป็น "* * * * *" ถ้าต้องการทดสอบให้ทำงานทุกๆ 1 นาที
 	_, err := c.AddFunc("0 0 * * *", func() {
-		log.Println("⏰ [Cron] กำลังตัดสต็อกอาหารประจำวัน (20 kg)...")
-		
-		// เรียกใช้ฟังก์ชันจาก database หักออก 20 กก.
-		err := database.DeductDailyFoodstock(20.0) 
-		if err != nil {
-			log.Printf("❌ [Cron] ตัดสต็อกล้มเหลว: %v\n", err)
+		log.Println("⏰ [Cron] กำลังตัดสต็อกอาหารประจำวัน (เม็ดเล็ก 20 kg, เม็ดใหญ่ 30 kg)...")
+
+		// ตัดสต็อกแต่ละประเภทแยกกัน คนละอัตราต่อวัน
+		if err := database.DeductFoodstockByType(models.FoodTypeSmallPellet, 20.0); err != nil {
+			log.Printf("❌ [Cron] ตัดสต็อกเม็ดเล็กล้มเหลว: %v\n", err)
+		}
+		if err := database.DeductFoodstockByType(models.FoodTypeLargePellet, 30.0); err != nil {
+			log.Printf("❌ [Cron] ตัดสต็อกเม็ดใหญ่ล้มเหลว: %v\n", err)
 		}
 	})
 

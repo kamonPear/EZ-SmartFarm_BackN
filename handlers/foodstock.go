@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -165,8 +166,14 @@ func GetFoodHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(history)
 }
 
-// ForceDeductStockHandler อนุญาตให้เรียก API เพื่อตัดสต็อก 20 กก. แบบแมนนวล
-// POST /api/foodstocks/force-deduct
+// DailyDeductAmounts คือจำนวน กก./วัน ที่ตัดออกจากสต็อกแต่ละประเภท (ค่าเดียวกับที่ Cron Job ใช้)
+var DailyDeductAmounts = map[string]float64{
+	models.FoodTypeSmallPellet: 20.0,
+	models.FoodTypeLargePellet: 30.0,
+}
+
+// ForceDeductStockHandler อนุญาตให้เรียก API เพื่อตัดสต็อกแบบแมนนวล ต้องระบุประเภทอาหารก่อนตัดเสมอ
+// POST /api/foodstocks/force-deduct  body: {"food_type": "เม็ดเล็ก"}
 func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -174,9 +181,22 @@ func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// เรียกใช้ฟังก์ชันตัดสต็อก 20 กก. (ตัวเดียวกับที่ Cron Job เรียกใช้)
-	err := database.DeductDailyFoodstock(20.0)
-	if err != nil {
+	var req models.DeductFoodstockRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[%s] %s - %d (Invalid request body)", r.Method, r.RequestURI, http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if !models.IsValidFoodType(req.FoodType) {
+		log.Printf("[%s] %s - %d (Invalid food_type: %q)", r.Method, r.RequestURI, http.StatusBadRequest, req.FoodType)
+		http.Error(w, "ต้องระบุ food_type เป็น 'เม็ดเล็ก' หรือ 'เม็ดใหญ่'", http.StatusBadRequest)
+		return
+	}
+
+	amount := DailyDeductAmounts[req.FoodType]
+
+	if err := database.DeductFoodstockByType(req.FoodType, amount); err != nil {
 		log.Printf("[%s] %s - %d (Failed to deduct stock: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to deduct stock", http.StatusInternalServerError)
 		return
@@ -184,6 +204,10 @@ func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	log.Printf("[%s] %s - %d ✓ บังคับตัดสต็อก 20 กก. เรียบร้อยแล้ว", r.Method, r.RequestURI, http.StatusOK)
-	w.Write([]byte(`{"message": "หักสต็อกอาหาร 20 กิโลกรัม สำเร็จ", "deducted": 20}`))
+	log.Printf("[%s] %s - %d ✓ ตัดสต็อก %s %.0f กก. เรียบร้อยแล้ว", r.Method, r.RequestURI, http.StatusOK, req.FoodType, amount)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":   fmt.Sprintf("หักสต็อกอาหาร%s %.0f กิโลกรัม สำเร็จ", req.FoodType, amount),
+		"food_type": req.FoodType,
+		"deducted":  amount,
+	})
 }

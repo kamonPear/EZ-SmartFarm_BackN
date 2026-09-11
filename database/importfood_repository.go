@@ -9,9 +9,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// CreateImportFood records a new food import lot and adds its volume onto the running Foodstock total (food_id = 1)
+// CreateImportFood records a new food import lot and adds its volume onto the running
+// Foodstock total for req.FoodType
 func CreateImportFood(req *models.CreateImportFoodRequest) (*models.ImportFood, error) {
 	lot := &models.ImportFood{
+		FoodType:     req.FoodType,
 		ImportVolume: req.ImportVolume,
 		ImportDate:   time.Now(),
 		ExpiryDate:   req.ExpiryDate,
@@ -22,20 +24,20 @@ func CreateImportFood(req *models.CreateImportFoodRequest) (*models.ImportFood, 
 		return nil, err
 	}
 
-	if err := addToFoodstock(float64(req.ImportVolume)); err != nil {
+	if err := addToFoodstock(req.FoodType, float64(req.ImportVolume)); err != nil {
 		log.Printf("Error updating foodstock total after import: %v", err)
 		return nil, err
 	}
 
-	log.Printf("✓ Import food lot #%d created (+%d kg)\n", lot.LotID, req.ImportVolume)
+	log.Printf("✓ Import food lot #%d created (%s +%d kg)\n", lot.LotID, req.FoodType, req.ImportVolume)
 	return lot, nil
 }
 
-// addToFoodstock adds amount onto the singleton foodstock row (food_id = 1), creating it if it doesn't exist yet
-func addToFoodstock(amount float64) error {
+// addToFoodstock adds amount onto the foodstock row for foodType, creating it if it doesn't exist yet
+func addToFoodstock(foodType string, amount float64) error {
 	var foodstock models.Foodstock
 
-	err := DB.Where("food_id = ?", 1).First(&foodstock).Error
+	err := DB.Where("food_type = ?", foodType).First(&foodstock).Error
 	if err == nil {
 		foodstock.QuantityCurrent += amount
 		foodstock.DateUp = time.Now()
@@ -47,7 +49,7 @@ func addToFoodstock(amount float64) error {
 	}
 
 	foodstock = models.Foodstock{
-		FoodID:          1,
+		FoodType:        foodType,
 		QuantityCurrent: amount,
 		DateUp:          time.Now(),
 	}

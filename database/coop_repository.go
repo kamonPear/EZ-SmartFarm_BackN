@@ -85,6 +85,9 @@ func UpdateCoop(coopID int, req *models.UpdateCoopRequest) (*models.Coop, error)
 	// Update only provided fields
 	updates := map[string]interface{}{}
 
+	if req.NameCoop != "" {
+		updates["name_coop"] = req.NameCoop
+	}
 	if !req.DateAdoptAnimals.IsZero() {
 		updates["date_adopt_animals"] = req.DateAdoptAnimals
 	}
@@ -109,6 +112,24 @@ func UpdateCoop(coopID int, req *models.UpdateCoopRequest) (*models.Coop, error)
 
 	fmt.Printf("✓ Coop %d updated\n", coopID)
 	return coop, nil
+}
+
+// UpdateCoopPositions batch-saves every coop's position on the farm layout canvas in one
+// transaction. Uses a direct map update (not the zero-skipping UpdateCoop helper) since
+// PosX/PosY are pointers - a real 0,0 position, or unplacing a coop via nil, must always
+// be written rather than silently skipped.
+func UpdateCoopPositions(entries []models.CoopPositionEntry) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		for _, e := range entries {
+			if err := tx.Model(&models.Coop{}).
+				Where("coop_id = ?", e.CoopID).
+				Updates(map[string]interface{}{"pos_x": e.PosX, "pos_y": e.PosY}).Error; err != nil {
+				log.Printf("Error updating position for coop %d: %v", e.CoopID, err)
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // DeleteCoop deletes a coop and all related records

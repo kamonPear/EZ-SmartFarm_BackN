@@ -55,6 +55,49 @@ func CreateVaccineHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(vaccine)
 }
 
+// UpdateVaccineHandler updates an existing vaccine record
+// PUT /api/vaccines?id={id}
+func UpdateVaccineHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		log.Printf("[%s] %s - %d (Missing vaccine id parameter)", r.Method, r.RequestURI, http.StatusBadRequest)
+		http.Error(w, "Missing vaccine id parameter", http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		log.Printf("[%s] %s - %d (Invalid vaccine id)", r.Method, r.RequestURI, http.StatusBadRequest)
+		http.Error(w, "Invalid vaccine id", http.StatusBadRequest)
+		return
+	}
+
+	var req models.UpdateVaccineRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[%s] %s - %d (Invalid request body)", r.Method, r.RequestURI, http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	vaccine, err := database.UpdateVaccine(id, &req)
+	if err != nil {
+		log.Printf("[%s] %s - %d (Failed to update vaccine: %v)", r.Method, r.RequestURI, http.StatusNotFound, err)
+		http.Error(w, "Vaccine not found", http.StatusNotFound)
+		return
+	}
+
+	log.Printf("[%s] %s - %d ✓ Updated vaccine ID: %d", r.Method, r.RequestURI, http.StatusOK, vaccine.VaccineID)
+	json.NewEncoder(w).Encode(vaccine)
+}
+
 // GetVaccineHandler retrieves vaccine records (ประวัติการฉีดจริง)
 // GET /api/vaccines
 func GetVaccineHandler(w http.ResponseWriter, r *http.Request) {

@@ -71,6 +71,40 @@ func GetAllVaccines() ([]models.Vaccine, error) {
 	return vaccines, err
 }
 
+// UpdateVaccine updates an existing vaccine record. Fields left zero-valued
+// on req are left unchanged. Uses load-mutate-Save (not a map .Updates()) so
+// the Vaccine.BeforeSave hook re-syncs the legacy "name" column from the
+// actual updated Name instead of from a zero-valued receiver struct.
+func UpdateVaccine(id int, req *models.UpdateVaccineRequest) (*models.Vaccine, error) {
+	vaccine, err := GetVaccineByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	if req.Name != "" {
+		vaccine.Name = req.Name
+	}
+	if req.Method != "" {
+		vaccine.Method = req.Method
+	}
+	if req.RecommendedAge != "" {
+		vaccine.RecommendedAge = req.RecommendedAge
+	}
+	if !req.RecordDate.IsZero() {
+		vaccine.RecordDate = req.RecordDate
+	}
+	if req.Note != "" {
+		vaccine.Note = req.Note
+	}
+
+	if err := DB.Save(vaccine).Error; err != nil {
+		log.Printf("Error updating vaccine ID %d: %v", id, err)
+		return nil, err
+	}
+
+	return vaccine, nil
+}
+
 // DeleteVaccine deletes a vaccine record by vaccine ID
 func DeleteVaccine(vaccineID int) error {
 	result := DB.Where("vaccine_id = ?", vaccineID).Delete(&models.Vaccine{})

@@ -37,6 +37,11 @@ func SetupRoutes(db *gorm.DB) {
 	rg.DELETE("/api/coops", handlers.DeleteCoopHandler)
 
 	rg.POST("/api/coops/layout", handlers.SaveCoopLayoutHandler)
+	rg.PUT("/api/coops/positions", handlers.UpdateCoopPositionsHandler)
+
+	// Farm layout (chosen outline shape coops are arranged within)
+	rg.GET("/api/farm-layout", handlers.GetFarmLayoutHandler)
+	rg.PUT("/api/farm-layout", handlers.UpdateFarmLayoutHandler)
 
 	// Eggs
 	rg.POST("/api/eggs", handlers.CreateEggHandler)
@@ -56,6 +61,7 @@ func SetupRoutes(db *gorm.DB) {
 	rg.PUT("/api/foods", handlers.UpdateFoodstockHandler)
 	rg.DELETE("/api/foods", handlers.DeleteFoodstockHandler)
 	rg.POST("/api/foodstocks/force-deduct", handlers.ForceDeductStockHandler)
+	rg.GET("/api/foods/coop-consumption", handlers.GetCoopFoodConsumptionHandler)
 
 	// Food import lots (each lot adds onto foodstock automatically)
 	rg.POST("/api/importfoods", handlers.CreateImportFoodHandler)
@@ -70,6 +76,7 @@ func SetupRoutes(db *gorm.DB) {
 	rg.PUT("/api/vaccines/schedule/update", handlers.UpdateCustomMedicineHandler)
 	rg.POST("/api/vaccines", handlers.CreateVaccineHandler)
 	rg.GET("/api/vaccines", handlers.GetVaccineHandler)
+	rg.PUT("/api/vaccines", handlers.UpdateVaccineHandler)
 	rg.DELETE("/api/vaccines", handlers.DeleteVaccineHandler)
 
 	// Calendar alerts: GET fetches, PUT toggles completion, DELETE removes a schedule

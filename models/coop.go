@@ -11,6 +11,11 @@ type Coop struct {
 	Birthday         time.Time `gorm:"index:idx_coop_birthday" json:"birthday"`
 	Note             string    `gorm:"column:note;type:text" json:"note"`
 
+	// ตำแหน่งบนผังฟาร์ม (nil = ยังไม่ได้ลากไปวางบนผัง) - ตั้งค่าผ่าน
+	// PUT /api/coops/positions เท่านั้น ไม่ใช่ผ่าน UpdateCoop ทั่วไป
+	PosX *float64 `gorm:"column:pos_x" json:"pos_x"`
+	PosY *float64 `gorm:"column:pos_y" json:"pos_y"`
+
 	// Relations (แก้โดยการลบ references:CoopID ออก)
 	Devices  []Device  `gorm:"foreignKey:CoopID" json:"devices,omitempty"`
 	Eggs     []Egg     `gorm:"foreignKey:CoopID" json:"eggs,omitempty"`
@@ -22,4 +27,3 @@ type Coop struct {
 func (Coop) TableName() string {
 	return "coop"
 }
-

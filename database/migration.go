@@ -18,11 +18,17 @@ func MigrateModels(db *gorm.DB) error {
 
 	if err := db.AutoMigrate(
 		&models.Coop{},
+		// Foodstock/ImportFood migrate right after Coop, before Device/SensorLog/Egg/Vaccine -
+		// AutoMigrate stops at the first model that errors, and egg/vaccine's coop_id FK is a
+		// pre-existing type mismatch that always fails here. Foodstock/ImportFood don't depend
+		// on those tables, so migrating them first means their new columns still get added
+		// even when that later failure happens.
+		&models.Foodstock{},
+		&models.ImportFood{},
+		&models.FarmLayout{},
 		&models.Device{},
 		&models.SensorLog{},
 		&models.Egg{},
-		&models.Foodstock{},
-		&models.ImportFood{},
 		&models.Health{},
 		&models.Vaccine{},
 	); err != nil {
@@ -60,6 +66,11 @@ func MigrateModels(db *gorm.DB) error {
 	// when the struct tag still said `unique` (that one isn't necessarily named the same).
 	// (coop_id, slot_index) is the real identity for a placed device now.
 	dropAllUniqueIndexesOnColumn(db, "device", "name")
+
+	// เม็ดเล็ก/เม็ดใหญ่ ต้องมีแถวสต็อกของตัวเองเสมอ (ดึงยอดจากแถวเดิมแบบไม่มีประเภทมาไว้ที่เม็ดเล็ก)
+	if err := EnsureFoodstockRows(); err != nil {
+		log.Printf("Warning: could not ensure foodstock rows: %v", err)
+	}
 
 	fmt.Println("✓ All tables migrated successfully")
 	return nil

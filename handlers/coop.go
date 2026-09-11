@@ -142,6 +142,11 @@ func UpdateCoopHandler(w http.ResponseWriter, r *http.Request) {
 
 	coop, err := database.UpdateCoop(id, &req)
 	if err != nil {
+		if database.IsDuplicateNameCoop(err) {
+			log.Printf("[%s] %s - %d (Duplicate coop name)", r.Method, r.RequestURI, http.StatusConflict)
+			http.Error(w, "Coop name already exists", http.StatusConflict)
+			return
+		}
 		log.Printf("[%s] %s - %d (Failed to update coop: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to update coop", http.StatusInternalServerError)
 		return

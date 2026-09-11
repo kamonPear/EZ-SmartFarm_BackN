@@ -32,6 +32,12 @@ func CreateImportFoodHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !models.IsValidFoodType(req.FoodType) {
+		log.Printf("[%s] %s - %d (Invalid food_type: %q)", r.Method, r.RequestURI, http.StatusBadRequest, req.FoodType)
+		http.Error(w, "food_type must be either 'เม็ดเล็ก' or 'เม็ดใหญ่'", http.StatusBadRequest)
+		return
+	}
+
 	lot, err := database.CreateImportFood(&req)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to create import food lot: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)

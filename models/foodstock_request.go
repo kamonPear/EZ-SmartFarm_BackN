@@ -11,6 +11,12 @@ type UpdateFoodstockRequest struct {
 // FoodstockResponse represents the response payload for foodstock data
 type FoodstockResponse struct {
 	FoodID          int       `json:"food_id"`
+	FoodType        string    `json:"food_type"`
 	QuantityCurrent float64   `json:"quantity_current"`
 	DateUp          time.Time `json:"date_up"`
+}
+
+// DeductFoodstockRequest represents the request payload for cutting stock of a chosen food type
+type DeductFoodstockRequest struct {
+	FoodType string `json:"food_type" binding:"required"`
 }
