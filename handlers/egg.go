@@ -32,6 +32,10 @@ func CreateEggHandler(w http.ResponseWriter, r *http.Request) {
 
 	egg, err := database.CreateEgg(&req)
 	if err != nil {
+		if database.IsDuplicateEggDate(err) {
+			http.Error(w, "Egg record for this coop and date already exists", http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

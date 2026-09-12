@@ -3,11 +3,23 @@ package database
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"EZ-SmartFarm_BachN/models"
 
 	"gorm.io/gorm"
 )
+
+// IsDuplicateEggDate reports whether err is a unique-constraint violation on
+// (coop_id, date_collect_egg) — i.e. an egg record already exists for that
+// coop on that date (schema.sql: UNIQUE (coop_id, date_collect_egg))
+func IsDuplicateEggDate(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate") && strings.Contains(msg, "coop_id")
+}
 
 // CreateEgg creates a new egg record in the database
 func CreateEgg(req *models.CreateEggRequest) (*models.Egg, error) {
