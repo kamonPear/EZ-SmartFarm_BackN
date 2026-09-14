@@ -62,6 +62,8 @@ func SetupRoutes(db *gorm.DB) {
 	rg.DELETE("/api/foods", handlers.DeleteFoodstockHandler)
 	rg.POST("/api/foodstocks/force-deduct", handlers.ForceDeductStockHandler)
 	rg.GET("/api/foods/coop-consumption", handlers.GetCoopFoodConsumptionHandler)
+	rg.POST("/api/foods/distribution", handlers.RecordFoodDistributionHandler)
+	rg.GET("/api/foods/distribution", handlers.GetFoodDistributionHistoryHandler)
 
 	// Food import lots (each lot adds onto foodstock automatically)
 	rg.POST("/api/importfoods", handlers.CreateImportFoodHandler)

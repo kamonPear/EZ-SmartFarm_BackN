@@ -25,6 +25,7 @@ func MigrateModels(db *gorm.DB) error {
 		// even when that later failure happens.
 		&models.Foodstock{},
 		&models.ImportFood{},
+		&models.FoodDistribution{},
 		&models.FarmLayout{},
 		&models.Device{},
 		&models.SensorLog{},
