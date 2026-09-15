@@ -75,6 +75,7 @@ func SetupRoutes(db *gorm.DB) {
 	// ServeMux matches the most specific pattern, so ordering here doesn't matter.
 	rg.GET("/api/vaccines/recommended", handlers.GetRecommendedVaccinesHandler)
 	rg.POST("/api/vaccines/schedule", handlers.AddCustomMedicineHandler)
+	rg.GET("/api/vaccines/schedule", handlers.GetMedicineSchedulesHandler)
 	rg.PUT("/api/vaccines/schedule/update", handlers.UpdateCustomMedicineHandler)
 	rg.POST("/api/vaccines", handlers.CreateVaccineHandler)
 	rg.GET("/api/vaccines", handlers.GetVaccineHandler)

@@ -247,6 +247,24 @@ func AddCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 🛑 กันชื่อยา/วัคซีนซ้ำ (ไม่สนตัวพิมพ์เล็ก-ใหญ่) - ไม่มี unique constraint
+	// ที่ตัวฐานข้อมูลเอง ต้องเช็คเองที่นี่ก่อน insert
+	var existingCount int64
+	if err := database.DB.Model(&models.MedicineSchedule{}).
+		Where("LOWER(name) = LOWER(?)", req.Name).
+		Count(&existingCount).Error; err != nil {
+		log.Printf("Failed to check duplicate medicine name: %v", err)
+		http.Error(w, "Failed to save medicine", http.StatusInternalServerError)
+		return
+	}
+	if existingCount > 0 {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"message": "มียา/วัคซีนชื่อนี้อยู่ในระบบแล้ว กรุณาใช้ชื่ออื่น",
+		})
+		return
+	}
+
 	if err := database.DB.Create(&req).Error; err != nil {
 		log.Printf("Failed to save medicine: %v", err)
 		http.Error(w, "Failed to save medicine", http.StatusInternalServerError)
@@ -258,6 +276,29 @@ func AddCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 		"message": "บันทึกข้อมูลยา/วัคซีนสำเร็จ",
 		"data":    req,
 	})
+}
+
+// GetMedicineSchedulesHandler คืนรายการประเภทยา/วัคซีนทั้งหมดที่มีอยู่ในระบบ
+// GET /api/vaccines/schedule
+func GetMedicineSchedulesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	var schedules []models.MedicineSchedule
+	if err := database.DB.Order("name asc").Find(&schedules).Error; err != nil {
+		log.Printf("Failed to fetch medicine schedules: %v", err)
+		http.Error(w, "Failed to fetch medicine schedules", http.StatusInternalServerError)
+		return
+	}
+
+	if schedules == nil {
+		schedules = []models.MedicineSchedule{}
+	}
+	json.NewEncoder(w).Encode(schedules)
 }
 
 // GetRecommendedVaccinesHandler ค้นหายาจาก Database ที่เหมาะสมกับอายุไก่
