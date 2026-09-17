@@ -561,14 +561,25 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, schedule := range schedules {
-			dueDate := coop.Birthday.AddDate(0, 0, schedule.MinAgeDays)
+			windowStart := coop.Birthday.AddDate(0, 0, schedule.MinAgeDays)
+			windowEnd := coop.Birthday.AddDate(0, 0, schedule.MaxAgeDays)
+
+			// ถ้าวันสุดท้ายของช่วงอายุที่ควรให้วัคซีนนี้ (max_age_days) ผ่านไปแล้ว
+			// ตั้งแต่ก่อนวันที่รับไก่เข้าคอก แปลว่าไก่โตเกินเงื่อนไขนี้มาก่อนจะมาถึงฟาร์มเรา
+			// (น่าจะเคยได้รับวัคซีนตัวนี้จากที่อื่นมาแล้ว) จึงไม่ต้องขึ้นให้ฟาร์มนี้ต้องฉีดอีก
+			if windowEnd.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
+				continue
+			}
+
+			// ถ้าช่วงอายุเริ่มต้น (min_age_days) มาก่อนวันนำเข้าเลี้ยง แต่ยังไม่เลย max_age_days
+			// (รับไก่เข้ามาตอนอายุอยู่กลางช่วงพอดี) ให้ถือว่าครบกำหนดตั้งแต่วันที่รับเข้าเลี้ยง
+			// เพราะฟาร์มเราเพิ่งมีไก่ตัวนี้ตอนนั้น ให้ฉีดได้ทันทีที่รับมา
+			dueDate := windowStart
+			if dueDate.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
+				dueDate = coop.DateAdoptAnimals
+			}
+
 			alertID := strconv.Itoa(coop.CoopID) + "_" + schedule.Name
-
-			// วันครบกำหนดคำนวณจากวันเกิดของไก่ ถ้ามันตกก่อนวันที่รับไก่เข้าคอก
-			// แปลว่าเลยกำหนดฉีดไปแล้วตั้งแต่ก่อนเริ่มติดตามในคอกนี้ - เดิมจะซ่อนทิ้งไปเลย
-			// ตอนนี้เปลี่ยนมาโชว์แทน แต่ติดธง is_overdue ไว้ให้แอปแสดงผลต่างจากรายการปกติ
-			isOverdue := dueDate.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02")
-
 			isDone := completedMap[alertID]
 
 			alerts = append(alerts, CalendarAlertResponse{
@@ -578,7 +589,7 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 				VaccineName:   schedule.Name,
 				InjectionType: schedule.Method,
 				IsCompleted:   isDone,
-				IsOverdue:     isOverdue,
+				IsOverdue:     false,
 				ChickenAge:    schedule.MinAgeDays,
 				Description:   schedule.Description,
 			})
@@ -646,11 +657,10 @@ func GetVaccineNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 		ageInDaysTomorrow := ageInDaysToday + 1
 
 		for _, schedule := range schedules {
-			// 🌟 คำนวณวันที่ต้องให้วัคซีน
-			dueDate := coop.Birthday.AddDate(0, 0, schedule.MinAgeDays)
-
-			// 🛑 กรอง: ข้ามวัคซีนที่กำหนดให้ ก่อนวันนำเข้าไก่ (เทียบ YYYY-MM-DD)
-			if dueDate.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
+			// 🛑 กรอง: ถ้าช่วงอายุที่ควรให้วัคซีนนี้ (ถึง max_age_days) ผ่านไปหมดแล้ว
+			// ตั้งแต่ก่อนวันนำเข้าไก่ แปลว่าไก่โตเกินเงื่อนไขนี้มาก่อนถึงฟาร์มเรา ไม่ต้องแจ้งเตือน
+			windowEnd := coop.Birthday.AddDate(0, 0, schedule.MaxAgeDays)
+			if windowEnd.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
 				continue
 			}
 

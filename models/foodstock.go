@@ -4,8 +4,8 @@ import "time"
 
 // Food type constants - every foodstock/import row must use one of these.
 const (
-	FoodTypeSmallPellet = "เม็ดเล็ก" // ไก่อายุ 0-6 สัปดาห์
-	FoodTypeLargePellet = "เม็ดใหญ่" // ไก่อายุมากกว่า 6 สัปดาห์
+	FoodTypeSmallPellet = "เม็ดเล็ก" // ไก่อายุ 0-14 สัปดาห์
+	FoodTypeLargePellet = "เม็ดใหญ่" // ไก่อายุตั้งแต่ 14 สัปดาห์ขึ้นไป
 )
 
 // IsValidFoodType reports whether foodType is one of the known food types
@@ -15,12 +15,12 @@ func IsValidFoodType(foodType string) bool {
 
 // AgeThresholdWeeksSmallToLarge is the chicken age (in weeks) at which a coop switches
 // from small pellet to large pellet feed.
-const AgeThresholdWeeksSmallToLarge = 6
+const AgeThresholdWeeksSmallToLarge = 14
 
 // FoodTypeForAgeWeeks returns which food type a coop should currently be fed, based on
 // the age (in weeks) of the chickens raised there.
 func FoodTypeForAgeWeeks(ageWeeks int) string {
-	if ageWeeks <= AgeThresholdWeeksSmallToLarge {
+	if ageWeeks < AgeThresholdWeeksSmallToLarge {
 		return FoodTypeSmallPellet
 	}
 	return FoodTypeLargePellet

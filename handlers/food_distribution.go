@@ -76,6 +76,27 @@ func RecordFoodDistributionHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rows)
 }
 
+// DeleteAllFoodDistributionHandler wipes the entire food distribution history
+// DELETE /api/foods/distribution
+func DeleteAllFoodDistributionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := database.DeleteAllFoodDistribution(); err != nil {
+		log.Printf("[%s] %s - %d (Failed to delete distribution history: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
+		http.Error(w, "Failed to delete distribution history", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	log.Printf("[%s] %s - %d ✓ Cleared food distribution history", r.Method, r.RequestURI, http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Food distribution history cleared"})
+}
+
 // GetFoodDistributionHistoryHandler lists every recorded distribution, newest first.
 // GET /api/foods/distribution?food_type=เม็ดเล็ก (food_type optional)
 func GetFoodDistributionHistoryHandler(w http.ResponseWriter, r *http.Request) {

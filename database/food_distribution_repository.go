@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"EZ-SmartFarm_BachN/models"
+
+	"gorm.io/gorm"
 )
 
 // CreateFoodDistributionBatch inserts one row per coop for a single deduction event.
@@ -44,4 +46,14 @@ func GetFoodDistributionHistory(foodType string) ([]models.FoodDistribution, err
 		return nil, err
 	}
 	return rows, nil
+}
+
+// DeleteAllFoodDistribution wipes the entire food distribution history
+func DeleteAllFoodDistribution() error {
+	if err := DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&models.FoodDistribution{}).Error; err != nil {
+		log.Printf("Error deleting food distribution history: %v", err)
+		return err
+	}
+	log.Println("✓ Food distribution history cleared")
+	return nil
 }

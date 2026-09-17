@@ -64,10 +64,12 @@ func SetupRoutes(db *gorm.DB) {
 	rg.GET("/api/foods/coop-consumption", handlers.GetCoopFoodConsumptionHandler)
 	rg.POST("/api/foods/distribution", handlers.RecordFoodDistributionHandler)
 	rg.GET("/api/foods/distribution", handlers.GetFoodDistributionHistoryHandler)
+	rg.DELETE("/api/foods/distribution", handlers.DeleteAllFoodDistributionHandler)
 
 	// Food import lots (each lot adds onto foodstock automatically)
 	rg.POST("/api/importfoods", handlers.CreateImportFoodHandler)
 	rg.GET("/api/importfoods", handleImportFoodsGet)
+	rg.DELETE("/api/importfoods", handlers.DeleteAllImportFoodsHandler)
 	rg.GET("/api/food_history", handlers.GetFoodHistoryHandler)
 
 	// Vaccines / medicine schedule
