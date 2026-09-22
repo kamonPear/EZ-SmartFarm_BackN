@@ -30,7 +30,7 @@ func FoodTypeForAgeWeeks(ageWeeks int) string {
 // automatically. There is one row per FoodType (small pellet / large pellet).
 type Foodstock struct {
 	FoodID          int       `gorm:"primaryKey;autoIncrement;column:food_id;type:int" json:"food_id"`
-	UserID          int       `gorm:"column:user_id;type:int;uniqueIndex:uq_foodstock_type_user" json:"user_id"`
+	UserID          int       `gorm:"column:user_id;type:int;size:32;uniqueIndex:uq_foodstock_type_user" json:"user_id"`
 	FoodType        string    `gorm:"column:food_type;type:varchar(20);uniqueIndex:uq_foodstock_type_user" json:"food_type"`
 	QuantityCurrent float64   `gorm:"column:quantity_current;type:decimal(10,2);check:quantity_current >= 0" json:"quantity_current"`
 	DateUp          time.Time `gorm:"column:date_up;type:date;not null" json:"date_up"`

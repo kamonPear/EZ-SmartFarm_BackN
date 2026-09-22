@@ -17,7 +17,7 @@ func IsValidFarmShape(shape string) bool {
 // first read/write, per the per-user data ownership model.
 type FarmLayout struct {
 	ID     int    `gorm:"primaryKey;autoIncrement;column:id;type:int" json:"id"`
-	UserID int    `gorm:"column:user_id;type:int;uniqueIndex:uq_farm_layout_user" json:"user_id"`
+	UserID int    `gorm:"column:user_id;type:int;size:32;uniqueIndex:uq_farm_layout_user" json:"user_id"`
 	Shape  string `gorm:"column:shape;type:varchar(20)" json:"shape"`
 }
 
