@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/handlers"
 )
 
@@ -28,76 +29,80 @@ func SetupRoutes(db *gorm.DB) {
 	rg := &router{mux: http.DefaultServeMux}
 
 	rg.ANY("/health", handlers.HealthCheck)
-	rg.POST("/login", handlers.Login)
+
+	// Auth
+	rg.POST("/api/auth/login", handlers.LoginHandler)                      // public
+	rg.POST("/api/auth/register", auth.RequireAdmin(handlers.RegisterHandler)) // admin-only
+	rg.GET("/api/auth/me", auth.RequireAuth(handlers.MeHandler))               // any logged-in user
 
 	// Coops
-	rg.POST("/api/coops", handlers.CreateCoopHandler)
-	rg.GET("/api/coops", handleCoopsGet)
-	rg.PUT("/api/coops", handlers.UpdateCoopHandler)
-	rg.DELETE("/api/coops", handlers.DeleteCoopHandler)
+	rg.POST("/api/coops", auth.RequireAuth(handlers.CreateCoopHandler))
+	rg.GET("/api/coops", auth.RequireAuth(handleCoopsGet))
+	rg.PUT("/api/coops", auth.RequireAuth(handlers.UpdateCoopHandler))
+	rg.DELETE("/api/coops", auth.RequireAuth(handlers.DeleteCoopHandler))
 
-	rg.POST("/api/coops/layout", handlers.SaveCoopLayoutHandler)
-	rg.PUT("/api/coops/positions", handlers.UpdateCoopPositionsHandler)
+	rg.POST("/api/coops/layout", auth.RequireAuth(handlers.SaveCoopLayoutHandler))
+	rg.PUT("/api/coops/positions", auth.RequireAuth(handlers.UpdateCoopPositionsHandler))
 
 	// Farm layout (chosen outline shape coops are arranged within)
-	rg.GET("/api/farm-layout", handlers.GetFarmLayoutHandler)
-	rg.PUT("/api/farm-layout", handlers.UpdateFarmLayoutHandler)
+	rg.GET("/api/farm-layout", auth.RequireAuth(handlers.GetFarmLayoutHandler))
+	rg.PUT("/api/farm-layout", auth.RequireAuth(handlers.UpdateFarmLayoutHandler))
 
 	// Eggs
-	rg.POST("/api/eggs", handlers.CreateEggHandler)
-	rg.GET("/api/eggs", handleEggsGet)
-	rg.PUT("/api/eggs", handlers.UpdateEggHandler)
-	rg.DELETE("/api/eggs", handlers.DeleteEggHandler)
+	rg.POST("/api/eggs", auth.RequireAuth(handlers.CreateEggHandler))
+	rg.GET("/api/eggs", auth.RequireAuth(handleEggsGet))
+	rg.PUT("/api/eggs", auth.RequireAuth(handlers.UpdateEggHandler))
+	rg.DELETE("/api/eggs", auth.RequireAuth(handlers.DeleteEggHandler))
 
 	// Health checks
-	rg.POST("/api/healths", handlers.CreateHealthHandler)
-	rg.GET("/api/healths", handleHealthsGet)
-	rg.PUT("/api/healths", handlers.UpdateHealthHandler)
-	rg.DELETE("/api/healths", handlers.DeleteHealthHandler)
-	rg.GET("/api/notifications/health_checks", handlers.GetHealthCheckNotiHandler)
+	rg.POST("/api/healths", auth.RequireAuth(handlers.CreateHealthHandler))
+	rg.GET("/api/healths", auth.RequireAuth(handleHealthsGet))
+	rg.PUT("/api/healths", auth.RequireAuth(handlers.UpdateHealthHandler))
+	rg.DELETE("/api/healths", auth.RequireAuth(handlers.DeleteHealthHandler))
+	rg.GET("/api/notifications/health_checks", auth.RequireAuth(handlers.GetHealthCheckNotiHandler))
 
 	// Foodstock (current totals; stock is added via /api/importfoods)
-	rg.GET("/api/foods", handleFoodsGet)
-	rg.PUT("/api/foods", handlers.UpdateFoodstockHandler)
-	rg.DELETE("/api/foods", handlers.DeleteFoodstockHandler)
-	rg.POST("/api/foodstocks/force-deduct", handlers.ForceDeductStockHandler)
-	rg.GET("/api/foods/coop-consumption", handlers.GetCoopFoodConsumptionHandler)
-	rg.POST("/api/foods/distribution", handlers.RecordFoodDistributionHandler)
-	rg.GET("/api/foods/distribution", handlers.GetFoodDistributionHistoryHandler)
-	rg.DELETE("/api/foods/distribution", handlers.DeleteAllFoodDistributionHandler)
+	rg.GET("/api/foods", auth.RequireAuth(handleFoodsGet))
+	rg.PUT("/api/foods", auth.RequireAuth(handlers.UpdateFoodstockHandler))
+	rg.DELETE("/api/foods", auth.RequireAuth(handlers.DeleteFoodstockHandler))
+	rg.POST("/api/foodstocks/force-deduct", auth.RequireAuth(handlers.ForceDeductStockHandler))
+	rg.GET("/api/foods/coop-consumption", auth.RequireAuth(handlers.GetCoopFoodConsumptionHandler))
+	rg.POST("/api/foods/distribution", auth.RequireAuth(handlers.RecordFoodDistributionHandler))
+	rg.GET("/api/foods/distribution", auth.RequireAuth(handlers.GetFoodDistributionHistoryHandler))
+	rg.DELETE("/api/foods/distribution", auth.RequireAuth(handlers.DeleteAllFoodDistributionHandler))
 
 	// Food import lots (each lot adds onto foodstock automatically)
-	rg.POST("/api/importfoods", handlers.CreateImportFoodHandler)
-	rg.GET("/api/importfoods", handleImportFoodsGet)
-	rg.DELETE("/api/importfoods", handlers.DeleteAllImportFoodsHandler)
-	rg.GET("/api/food_history", handlers.GetFoodHistoryHandler)
+	rg.POST("/api/importfoods", auth.RequireAuth(handlers.CreateImportFoodHandler))
+	rg.GET("/api/importfoods", auth.RequireAuth(handleImportFoodsGet))
+	rg.DELETE("/api/importfoods", auth.RequireAuth(handlers.DeleteAllImportFoodsHandler))
+	rg.GET("/api/food_history", auth.RequireAuth(handlers.GetFoodHistoryHandler))
 
 	// Vaccines / medicine schedule
 	// NOTE: register the more specific /api/vaccines/* paths too - Go's
 	// ServeMux matches the most specific pattern, so ordering here doesn't matter.
-	rg.GET("/api/vaccines/recommended", handlers.GetRecommendedVaccinesHandler)
-	rg.POST("/api/vaccines/schedule", handlers.AddCustomMedicineHandler)
-	rg.GET("/api/vaccines/schedule", handlers.GetMedicineSchedulesHandler)
-	rg.PUT("/api/vaccines/schedule/update", handlers.UpdateCustomMedicineHandler)
-	rg.POST("/api/vaccines", handlers.CreateVaccineHandler)
-	rg.GET("/api/vaccines", handlers.GetVaccineHandler)
-	rg.PUT("/api/vaccines", handlers.UpdateVaccineHandler)
-	rg.DELETE("/api/vaccines", handlers.DeleteVaccineHandler)
+	rg.GET("/api/vaccines/recommended", auth.RequireAuth(handlers.GetRecommendedVaccinesHandler))
+	rg.POST("/api/vaccines/schedule", auth.RequireAuth(handlers.AddCustomMedicineHandler))
+	rg.GET("/api/vaccines/schedule", auth.RequireAuth(handlers.GetMedicineSchedulesHandler))
+	rg.PUT("/api/vaccines/schedule/update", auth.RequireAuth(handlers.UpdateCustomMedicineHandler))
+	rg.POST("/api/vaccines", auth.RequireAuth(handlers.CreateVaccineHandler))
+	rg.GET("/api/vaccines", auth.RequireAuth(handlers.GetVaccineHandler))
+	rg.PUT("/api/vaccines", auth.RequireAuth(handlers.UpdateVaccineHandler))
+	rg.DELETE("/api/vaccines", auth.RequireAuth(handlers.DeleteVaccineHandler))
 
 	// Calendar alerts: GET fetches, PUT toggles completion, DELETE removes a schedule
-	rg.GET("/api/vaccines/alerts", handlers.GetVaccineCalendarAlertsHandler)
-	rg.PUT("/api/vaccines/alerts", handlers.GetVaccineCalendarAlertsHandler)
-	rg.DELETE("/api/vaccines/alerts", handlers.GetVaccineCalendarAlertsHandler)
+	rg.GET("/api/vaccines/alerts", auth.RequireAuth(handlers.GetVaccineCalendarAlertsHandler))
+	rg.PUT("/api/vaccines/alerts", auth.RequireAuth(handlers.GetVaccineCalendarAlertsHandler))
+	rg.DELETE("/api/vaccines/alerts", auth.RequireAuth(handlers.GetVaccineCalendarAlertsHandler))
 
-	rg.GET("/api/notifications/vaccines", handlers.GetVaccineNotificationsHandler)
+	rg.GET("/api/notifications/vaccines", auth.RequireAuth(handlers.GetVaccineNotificationsHandler))
 
 	// Devices
-	rg.POST("/api/devices", handlers.CreateDeviceHandler)
-	rg.GET("/api/devices", handleDevicesGet)
-	rg.PUT("/api/devices", handlers.UpdateDeviceHandler)
-	rg.DELETE("/api/devices", handlers.DeleteDeviceHandler)
+	rg.POST("/api/devices", auth.RequireAuth(handlers.CreateDeviceHandler))
+	rg.GET("/api/devices", auth.RequireAuth(handleDevicesGet))
+	rg.PUT("/api/devices", auth.RequireAuth(handlers.UpdateDeviceHandler))
+	rg.DELETE("/api/devices", auth.RequireAuth(handlers.DeleteDeviceHandler))
 
-	// Sensors
+	// Sensors - IoT device ingestion, no user JWT available in the field, stays public
 	rg.POST("/api/sensor-logs", handlers.ReceiveSensorDataHandler)
 	rg.POST("/api/sensor/upload", handlers.HandleArduinoUpload(db))
 }

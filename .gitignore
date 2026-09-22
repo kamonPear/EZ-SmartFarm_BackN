@@ -1,2 +1,6 @@
 /.env
 /.env.example
+
+# Generated admin bootstrap credentials - printed once to stdout and written here for
+# convenience; must never be committed.
+database/scripts/*.local.txt
