@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
 
+	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/database"
 	"EZ-SmartFarm_BachN/models"
 )
@@ -16,6 +18,12 @@ func CreateImportFoodHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -38,7 +46,7 @@ func CreateImportFoodHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lot, err := database.CreateImportFood(&req)
+	lot, err := database.CreateImportFood(&req, userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to create import food lot: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to create import food lot", http.StatusInternalServerError)
@@ -60,6 +68,12 @@ func GetImportFoodHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	idStr := r.URL.Query().Get("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -68,8 +82,11 @@ func GetImportFoodHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lot, err := database.GetImportFoodByID(id)
+	lot, err := database.GetImportFoodByID(id, userID)
 	if err != nil {
+		if !errors.Is(err, database.ErrNotFound) {
+			log.Printf("[%s] %s - %d (Failed to fetch import food lot: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
+		}
 		log.Printf("[%s] %s - %d (Import food lot not found)", r.Method, r.RequestURI, http.StatusNotFound)
 		http.Error(w, "Import food lot not found", http.StatusNotFound)
 		return
@@ -79,7 +96,7 @@ func GetImportFoodHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(lot)
 }
 
-// GetAllImportFoodsHandler retrieves the full import food history
+// GetAllImportFoodsHandler retrieves the caller's full import food history
 // GET /api/importfoods
 func GetAllImportFoodsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -88,7 +105,13 @@ func GetAllImportFoodsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lots, err := database.GetAllImportFood()
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	lots, err := database.GetAllImportFood(userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to fetch import food history: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to fetch import food history", http.StatusInternalServerError)

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/database"
 	"EZ-SmartFarm_BachN/models"
 )
@@ -12,13 +13,20 @@ import (
 // RecordFoodDistributionHandler is the single action that both deducts foodstock and
 // records how it was split across coops - there is no fixed daily amount anymore,
 // the deducted total is exactly the sum of every item's kg_given the caller provides.
-// Stock is deducted first; the distribution rows are only written once that succeeds,
-// so a failed deduction never leaves an orphaned distribution record behind.
+// Every coop_id referenced must belong to the caller (404 otherwise). Stock is
+// deducted first; the distribution rows are only written once that succeeds, so a
+// failed deduction never leaves an orphaned distribution record behind.
 // POST /api/foods/distribution
 func RecordFoodDistributionHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -49,6 +57,18 @@ func RecordFoodDistributionHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		total += item.KgGiven
+
+		owned, err := database.CoopBelongsToUser(item.CoopID, userID)
+		if err != nil {
+			log.Printf("[%s] %s - %d (Failed to verify coop ownership: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
+			http.Error(w, "Failed to verify coop ownership", http.StatusInternalServerError)
+			return
+		}
+		if !owned {
+			log.Printf("[%s] %s - %d (Coop not found: %d)", r.Method, r.RequestURI, http.StatusNotFound, item.CoopID)
+			http.Error(w, "Coop not found", http.StatusNotFound)
+			return
+		}
 	}
 
 	if total <= 0 {
@@ -57,13 +77,13 @@ func RecordFoodDistributionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.DeductFoodstockByType(req.FoodType, total); err != nil {
+	if err := database.DeductFoodstockByType(req.FoodType, userID, total); err != nil {
 		log.Printf("[%s] %s - %d (Failed to deduct stock: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to deduct stock", http.StatusInternalServerError)
 		return
 	}
 
-	rows, err := database.CreateFoodDistributionBatch(req.FoodType, req.Items)
+	rows, err := database.CreateFoodDistributionBatch(req.FoodType, req.Items, userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to save distribution: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to save distribution", http.StatusInternalServerError)
@@ -76,7 +96,7 @@ func RecordFoodDistributionHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rows)
 }
 
-// GetFoodDistributionHistoryHandler lists every recorded distribution, newest first.
+// GetFoodDistributionHistoryHandler lists every distribution the caller recorded, newest first.
 // GET /api/foods/distribution?food_type=เม็ดเล็ก (food_type optional)
 func GetFoodDistributionHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -85,8 +105,14 @@ func GetFoodDistributionHistoryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	foodType := r.URL.Query().Get("food_type")
-	rows, err := database.GetFoodDistributionHistory(foodType)
+	rows, err := database.GetFoodDistributionHistory(foodType, userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to fetch distribution history: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to fetch distribution history", http.StatusInternalServerError)

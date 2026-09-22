@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/database"
 	"EZ-SmartFarm_BachN/models"
 )
@@ -23,6 +25,12 @@ func CreateVaccineHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	var req models.CreateVaccineRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[%s] %s - %d (Invalid request body)", r.Method, r.RequestURI, http.StatusBadRequest)
@@ -36,7 +44,7 @@ func CreateVaccineHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	coop, err := database.GetCoopByID(req.CoopID)
+	coop, err := database.GetCoopByIDForUser(req.CoopID, userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Coop not found: %v)", r.Method, r.RequestURI, http.StatusNotFound, err)
 		http.Error(w, "Coop not found", http.StatusNotFound)
@@ -66,6 +74,12 @@ func UpdateVaccineHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
 		log.Printf("[%s] %s - %d (Missing vaccine id parameter)", r.Method, r.RequestURI, http.StatusBadRequest)
@@ -87,7 +101,7 @@ func UpdateVaccineHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vaccine, err := database.UpdateVaccine(id, &req)
+	vaccine, err := database.UpdateVaccine(id, &req, userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to update vaccine: %v)", r.Method, r.RequestURI, http.StatusNotFound, err)
 		http.Error(w, "Vaccine not found", http.StatusNotFound)
@@ -109,6 +123,12 @@ func GetVaccineHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	vaccineID := r.URL.Query().Get("id")
 	coopID := r.URL.Query().Get("coop_id")
 
@@ -121,7 +141,7 @@ func GetVaccineHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		vaccine, err := database.GetVaccineByID(id)
+		vaccine, err := database.GetVaccineByID(id, userID)
 		if err != nil {
 			log.Printf("[%s] %s - %d (Vaccine not found: %v)", r.Method, r.RequestURI, http.StatusNotFound, err)
 			http.Error(w, "Vaccine not found", http.StatusNotFound)
@@ -143,8 +163,13 @@ func GetVaccineHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		vaccines, err := database.GetVaccinesByCoopID(id)
+		vaccines, err := database.GetVaccinesByCoopID(id, userID)
 		if err != nil {
+			if errors.Is(err, database.ErrNotFound) {
+				log.Printf("[%s] %s - %d (Coop not found)", r.Method, r.RequestURI, http.StatusNotFound)
+				http.Error(w, "Coop not found", http.StatusNotFound)
+				return
+			}
 			log.Printf("[%s] %s - %d (Failed to retrieve vaccines: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 			http.Error(w, "Failed to retrieve vaccines", http.StatusInternalServerError)
 			return
@@ -157,7 +182,7 @@ func GetVaccineHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get all vaccines
-	vaccines, err := database.GetAllVaccines()
+	vaccines, err := database.GetAllVaccines(userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to retrieve vaccines: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to retrieve vaccines", http.StatusInternalServerError)
@@ -180,6 +205,12 @@ func DeleteVaccineHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	vaccineID := r.URL.Query().Get("id")
 	coopID := r.URL.Query().Get("coop_id")
 
@@ -192,8 +223,13 @@ func DeleteVaccineHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = database.DeleteVaccine(id)
+		err = database.DeleteVaccine(id, userID)
 		if err != nil {
+			if errors.Is(err, database.ErrNotFound) {
+				log.Printf("[%s] %s - %d (Vaccine not found)", r.Method, r.RequestURI, http.StatusNotFound)
+				http.Error(w, "Vaccine not found", http.StatusNotFound)
+				return
+			}
 			log.Printf("[%s] %s - %d (Failed to delete vaccine: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 			http.Error(w, "Failed to delete vaccine", http.StatusInternalServerError)
 			return
@@ -214,8 +250,13 @@ func DeleteVaccineHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = database.DeleteVaccinesByCoopID(id)
+		err = database.DeleteVaccinesByCoopIDForUser(id, userID)
 		if err != nil {
+			if errors.Is(err, database.ErrNotFound) {
+				log.Printf("[%s] %s - %d (Coop not found)", r.Method, r.RequestURI, http.StatusNotFound)
+				http.Error(w, "Coop not found", http.StatusNotFound)
+				return
+			}
 			log.Printf("[%s] %s - %d (Failed to delete vaccines: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 			http.Error(w, "Failed to delete vaccines", http.StatusInternalServerError)
 			return
@@ -312,6 +353,12 @@ func GetRecommendedVaccinesHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	coopID := r.URL.Query().Get("coop_id")
 
 	if coopID != "" {
@@ -322,7 +369,7 @@ func GetRecommendedVaccinesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		coop, err := database.GetCoopByID(id)
+		coop, err := database.GetCoopByIDForUser(id, userID)
 		if err != nil {
 			log.Printf("[%s] %s - %d (Coop not found: %v)", r.Method, r.RequestURI, http.StatusNotFound, err)
 			http.Error(w, "Coop not found", http.StatusNotFound)
@@ -405,6 +452,12 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodDelete {
 		w.Header().Set("Content-Type", "application/json")
 
+		userID, ok := auth.UserIDFromContext(r)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		alertID := r.URL.Query().Get("id")
 		if alertID == "" {
 			http.Error(w, "Missing id parameter", http.StatusBadRequest)
@@ -417,10 +470,11 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid id format", http.StatusBadRequest)
 			return
 		}
-		
+
 		vaccineName := parts[1] // ดึงชื่อวัคซีนออกมา
 
 		// 🛑 ลบตารางเกณฑ์ (medicine_schedules) เพื่อไม่ให้วัคซีนตัวนี้ไปแจ้งเตือนอีก
+		// medicine_schedules เป็นตารางเกณฑ์กลาง (ไม่ผูกกับ user) จึงลบได้ตรงๆ
 		err := database.DB.Where("name = ?", vaccineName).Delete(&models.MedicineSchedule{}).Error
 		if err != nil {
 			log.Printf("Failed to delete vaccine schedule: %v", err)
@@ -428,8 +482,8 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// 🛑 ลบประวัติการให้วัคซีนที่เคยมีอยู่ในตารางจริง (vaccine) ด้วย
-		database.DB.Where("name_vaccine = ?", vaccineName).Delete(&models.Vaccine{})
+		// 🛑 ลบประวัติการให้วัคซีนที่เคยมีอยู่ในตารางจริง (vaccine) ด้วย - เฉพาะคอกของผู้เรียกเท่านั้น
+		database.DB.Where("name_vaccine = ? AND coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", vaccineName, userID).Delete(&models.Vaccine{})
 
 		w.WriteHeader(http.StatusOK)
 		log.Printf("[%s] %s - %d ✓ Deleted vaccine schedule: %s", r.Method, r.RequestURI, http.StatusOK, vaccineName)
@@ -446,6 +500,12 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPut {
 		w.Header().Set("Content-Type", "application/json")
 
+		userID, ok := auth.UserIDFromContext(r)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		alertID := r.URL.Query().Get("id")
 		if alertID == "" {
 			http.Error(w, "Missing id parameter", http.StatusBadRequest)
@@ -461,6 +521,17 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 		coopID, err := strconv.Atoi(parts[0])
 		if err != nil {
 			http.Error(w, "Invalid coop ID format", http.StatusBadRequest)
+			return
+		}
+
+		owned, err := database.CoopBelongsToUser(coopID, userID)
+		if err != nil {
+			log.Printf("Failed to verify coop ownership: %v", err)
+			http.Error(w, "Failed to verify coop ownership", http.StatusInternalServerError)
+			return
+		}
+		if !owned {
+			http.Error(w, "Coop not found", http.StatusNotFound)
 			return
 		}
 		vaccineName := parts[1]
@@ -526,7 +597,13 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	coops, err := database.GetAllCoops()
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	coops, err := database.GetAllCoops(userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to retrieve coops: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to retrieve coops", http.StatusInternalServerError)
@@ -545,7 +622,9 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 		VaccineName string `gorm:"column:name_vaccine"`
 	}
 	var histories []VaccineHistory
-	database.DB.Model(&models.Vaccine{}).Select("coop_id, name_vaccine").Find(&histories)
+	database.DB.Model(&models.Vaccine{}).Select("coop_id, name_vaccine").
+		Where("coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", userID).
+		Find(&histories)
 
 	completedMap := make(map[string]bool)
 	for _, h := range histories {
@@ -609,9 +688,15 @@ func GetVaccineNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	notifications := []NotificationResponse{}
 
-	coops, err := database.GetAllCoops()
+	coops, err := database.GetAllCoops(userID)
 	if err != nil {
 		http.Error(w, "Failed to retrieve coops", http.StatusInternalServerError)
 		return
@@ -688,8 +773,14 @@ func GetHealthCheckNotiHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	// เรียกฟังก์ชันดึงข้อมูลที่เราเพิ่งสร้าง
-	notifications, err := database.GetHealthCheckNotifications()
+	notifications, err := database.GetHealthCheckNotifications(userID)
 	if err != nil {
 		http.Error(w, "Failed to fetch health check notifications", http.StatusInternalServerError)
 		return

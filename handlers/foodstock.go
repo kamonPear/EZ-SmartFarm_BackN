@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 
+	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/database"
 	"EZ-SmartFarm_BachN/models"
 )
@@ -17,6 +19,12 @@ func GetFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -34,7 +42,7 @@ func GetFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	foodstock, err := database.GetFoodstockByID(id)
+	foodstock, err := database.GetFoodstockByID(id, userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Foodstock not found)", r.Method, r.RequestURI, http.StatusNotFound)
 		http.Error(w, "Foodstock not found", http.StatusNotFound)
@@ -46,7 +54,7 @@ func GetFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(foodstock)
 }
 
-// GetAllFoodstocksHandler retrieves all foodstocks
+// GetAllFoodstocksHandler retrieves all foodstocks owned by the caller
 // GET /api/foodstocks
 func GetAllFoodstocksHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -55,7 +63,13 @@ func GetAllFoodstocksHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	foodstocks, err := database.GetAllFoodstocks()
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	foodstocks, err := database.GetAllFoodstocks(userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to fetch foodstocks: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to fetch foodstocks", http.StatusInternalServerError)
@@ -73,6 +87,12 @@ func UpdateFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -98,8 +118,13 @@ func UpdateFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	foodstock, err := database.UpdateFoodstock(id, &req)
+	foodstock, err := database.UpdateFoodstock(id, &req, userID)
 	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			log.Printf("[%s] %s - %d (Foodstock not found)", r.Method, r.RequestURI, http.StatusNotFound)
+			http.Error(w, "Foodstock not found", http.StatusNotFound)
+			return
+		}
 		log.Printf("[%s] %s - %d (Failed to update foodstock: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to update foodstock", http.StatusInternalServerError)
 		return
@@ -119,6 +144,12 @@ func DeleteFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
 		log.Printf("[%s] %s - %d (Missing foodstock id parameter)", r.Method, r.RequestURI, http.StatusBadRequest)
@@ -133,7 +164,12 @@ func DeleteFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.DeleteFoodstock(id); err != nil {
+	if err := database.DeleteFoodstock(id, userID); err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			log.Printf("[%s] %s - %d (Foodstock not found)", r.Method, r.RequestURI, http.StatusNotFound)
+			http.Error(w, "Foodstock not found", http.StatusNotFound)
+			return
+		}
 		log.Printf("[%s] %s - %d (Failed to delete foodstock: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to delete foodstock", http.StatusInternalServerError)
 		return
@@ -145,7 +181,7 @@ func DeleteFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Foodstock deleted successfully"})
 }
 
-// GetFoodHistoryHandler retrieves the history of food imports (importfood table)
+// GetFoodHistoryHandler retrieves the caller's history of food imports (importfood table)
 // GET /api/food_history
 func GetFoodHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -154,7 +190,13 @@ func GetFoodHistoryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	history, err := database.GetAllImportFood()
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	history, err := database.GetAllImportFood(userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to fetch food history: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to fetch food history", http.StatusInternalServerError)
@@ -173,11 +215,18 @@ var DailyDeductAmounts = map[string]float64{
 }
 
 // ForceDeductStockHandler อนุญาตให้เรียก API เพื่อตัดสต็อกแบบแมนนวล ต้องระบุประเภทอาหารก่อนตัดเสมอ
+// ตัดเฉพาะสต็อกของผู้เรียก (userID) เท่านั้น
 // POST /api/foodstocks/force-deduct  body: {"food_type": "เม็ดเล็ก"}
 func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -196,7 +245,7 @@ func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 
 	amount := DailyDeductAmounts[req.FoodType]
 
-	if err := database.DeductFoodstockByType(req.FoodType, amount); err != nil {
+	if err := database.DeductFoodstockByType(req.FoodType, userID, amount); err != nil {
 		log.Printf("[%s] %s - %d (Failed to deduct stock: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to deduct stock", http.StatusInternalServerError)
 		return
