@@ -5,7 +5,7 @@ import "time"
 // Health represents chicken health records
 type Health struct {
 	HealthID   int       `gorm:"primaryKey;column:health_id;type:int" json:"health_id"`
-	CoopID     int       `gorm:"column:coop_id;index;not null;type:int" json:"coop_id"`
+	CoopID     int       `gorm:"column:coop_id;index;not null;type:int;size:32" json:"coop_id"`
 	Healthy    int       `gorm:"column:number_healthy;default:0" json:"healthy"`
 	PoorHealth int       `gorm:"column:number_poor_health;default:0" json:"poor_health"`
 	Note       string    `gorm:"column:note;type:text" json:"note"`
