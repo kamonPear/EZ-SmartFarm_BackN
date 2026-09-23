@@ -43,16 +43,14 @@ func jwtSecret() []byte {
 // Claims is the JWT payload issued for an authenticated user.
 type Claims struct {
 	Username string `json:"username"`
-	Role     string `json:"role"`
 	jwt.RegisteredClaims
 }
 
 // GenerateToken issues a signed HS256 JWT for the given user, valid for TokenTTL.
-func GenerateToken(userID int, username, role string) (string, error) {
+func GenerateToken(userID int, username string) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		Username: username,
-		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.Itoa(userID),
 			IssuedAt:  jwt.NewNumericDate(now),

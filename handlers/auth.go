@@ -56,7 +56,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.GenerateToken(user.ID, user.Username, user.Role)
+	token, err := auth.GenerateToken(user.ID, user.Username)
 	if err != nil {
 		log.Printf("LoginHandler: error generating token: %v", err)
 		writeJSONErr(w, http.StatusInternalServerError, "internal server error")
@@ -68,12 +68,11 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		"user": map[string]interface{}{
 			"id":       user.ID,
 			"username": user.Username,
-			"role":     user.Role,
 		},
 	})
 }
 
-// RegisterHandler creates a new user. Mounted behind auth.RequireAdmin.
+// RegisterHandler creates a new user. Mounted behind auth.RequireAdminKey.
 // POST /api/auth/register
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -88,19 +87,9 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Username = strings.TrimSpace(req.Username)
-	req.Role = strings.TrimSpace(req.Role)
 
 	if req.Username == "" || req.Password == "" {
 		writeJSONErr(w, http.StatusBadRequest, "username and password are required")
-		return
-	}
-
-	role := req.Role
-	if role == "" {
-		role = "user"
-	}
-	if role != "user" && role != "admin" {
-		writeJSONErr(w, http.StatusBadRequest, "role must be either 'admin' or 'user'")
 		return
 	}
 
@@ -125,7 +114,6 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	user := &models.User{
 		Username: req.Username,
 		Password: hashed,
-		Role:     role,
 	}
 	if err := database.CreateUser(user); err != nil {
 		log.Printf("RegisterHandler: error creating user: %v", err)
@@ -133,11 +121,10 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("✓ Registered new user %q (role=%s)", user.Username, user.Role)
+	log.Printf("✓ Registered new user %q", user.Username)
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"id":       user.ID,
 		"username": user.Username,
-		"role":     user.Role,
 	})
 }
 
@@ -164,6 +151,5 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id":       user.ID,
 		"username": user.Username,
-		"role":     user.Role,
 	})
 }

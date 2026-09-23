@@ -11,7 +11,6 @@ type User struct {
 	ID        int       `json:"id" gorm:"column:id_User;primaryKey;autoIncrement;type:int;size:32"`
 	Username  string    `json:"username" gorm:"column:username;unique;not null"`
 	Password  string    `json:"-" gorm:"column:password;not null"`
-	Role      string    `json:"role" gorm:"column:role;type:varchar(20);not null;default:'user'"`
 	CreatedAt time.Time `json:"created_at" gorm:"column:created_at"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"column:updated_at"`
 }
@@ -27,9 +26,9 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-// RegisterRequest represents the request payload for creating a new user (admin-only).
+// RegisterRequest represents the request payload for creating a new user.
+// Gated by the X-Admin-Key header, not by any per-user role.
 type RegisterRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
-	Role     string `json:"role"` // optional, defaults to "user"
 }
