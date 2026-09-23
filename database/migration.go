@@ -21,14 +21,24 @@ func MigrateModels(db *gorm.DB) error {
 		log.Printf("Warning: Could not disable foreign key checks: %v", err)
 	}
 
+	// egg.coop_id and vaccine.coop_id were created as BIGINT (GORM's default mapping for
+	// a bare Go `int` before the explicit `type:int` tag existed on those fields), while
+	// coop.coop_id is INT. That mismatch made AutoMigrate's attempt to add the
+	// fk_coop_eggs/fk_coop_vaccines constraints below fail with error 3780 on every boot -
+	// and since AutoMigrate stops at the first model that errors, everything after Egg in
+	// the list below never got migrated either. Narrow both first so those FKs can
+	// actually be created (see the ensureForeignKey calls after AutoMigrate).
+	ensureColumnIsInt(db, "egg", "coop_id", false)
+	ensureColumnIsInt(db, "vaccine", "coop_id", false)
+
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.Coop{},
-		// Foodstock/ImportFood migrate right after Coop, before Device/SensorLog/Egg/Vaccine -
-		// AutoMigrate stops at the first model that errors, and egg/vaccine's coop_id FK is a
-		// pre-existing type mismatch that always fails here. Foodstock/ImportFood don't depend
-		// on those tables, so migrating them first means their new columns still get added
-		// even when that later failure happens.
+		// Foodstock/ImportFood migrate right after Coop, before Device/SensorLog/Egg/Vaccine,
+		// purely so their columns still get added first in case anything later in this list
+		// ever fails again (AutoMigrate stops at the first model that errors) - egg/vaccine's
+		// coop_id used to always fail here until the ensureColumnIsInt calls above started
+		// narrowing them ahead of time; kept this ordering as cheap insurance either way.
 		&models.Foodstock{},
 		&models.ImportFood{},
 		&models.FoodDistribution{},
@@ -54,6 +64,14 @@ func MigrateModels(db *gorm.DB) error {
 	// name_coop is a secondary key added alongside the existing id-based FKs.
 	// AutoMigrate doesn't manage this on its own, so add it explicitly and idempotently.
 	ensureUniqueIndex(db, "coop", "uq_coop_name_coop", "ALTER TABLE `coop` ADD UNIQUE KEY `uq_coop_name_coop` (`name_coop`)")
+
+	// AutoMigrate above should now create these itself (coop_id is narrowed to INT before
+	// it runs), but add them explicitly too as a guarded fallback - matching the naming
+	// GORM itself used to attempt (from Coop's has-many Eggs/Vaccines associations), so
+	// this is a no-op once AutoMigrate has already succeeded. ON DELETE CASCADE matches
+	// device_ibfk_1/health_ibfk_1, the other two real FKs onto coop.
+	ensureForeignKey(db, "egg", "fk_coop_eggs", "ALTER TABLE `egg` ADD CONSTRAINT `fk_coop_eggs` FOREIGN KEY (`coop_id`) REFERENCES `coop`(`coop_id`) ON DELETE CASCADE")
+	ensureForeignKey(db, "vaccine", "fk_coop_vaccines", "ALTER TABLE `vaccine` ADD CONSTRAINT `fk_coop_vaccines` FOREIGN KEY (`coop_id`) REFERENCES `coop`(`coop_id`) ON DELETE CASCADE")
 
 	// The name_coop FKs below turned out to be unreliable: app code never actually populates
 	// name_coop on child rows (it's always left as ""), and multiple coops can have a blank
@@ -122,7 +140,7 @@ func ensureAdminBootstrapAndOwnership(db *gorm.DB) error {
 	// retroactively narrow an already-widened column type. Fix it up explicitly before
 	// the FK below, which MySQL otherwise rejects with error 3780 (incompatible types).
 	for _, table := range ownedTables {
-		ensureColumnIsInt(db, table, "user_id")
+		ensureColumnIsInt(db, table, "user_id", true)
 	}
 
 	adminID, err := ensureBootstrapAdmin(db)
@@ -275,8 +293,10 @@ func ensureForeignKey(db *gorm.DB, table, constraintName, ddl string) {
 // ensureColumnIsInt narrows column on table to a plain INT if GORM's AutoMigrate left
 // it as something else (typically BIGINT, its default mapping for a bare Go `int`
 // field before an explicit `type:int` tag is added). A no-op once the column is
-// already INT. NULL-ability is preserved via MODIFY rather than CHANGE.
-func ensureColumnIsInt(db *gorm.DB, table, column string) {
+// already INT. nullable controls whether the narrowed column allows NULL - callers
+// must pass the column's actual current nullability (MODIFY replaces the whole column
+// definition, so getting this wrong would silently flip it).
+func ensureColumnIsInt(db *gorm.DB, table, column string, nullable bool) {
 	var dataType string
 	if err := db.Raw(
 		"SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
@@ -288,7 +308,11 @@ func ensureColumnIsInt(db *gorm.DB, table, column string) {
 	if dataType == "" || dataType == "int" {
 		return
 	}
-	if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` INT NULL", table, column)).Error; err != nil {
+	nullClause := "NOT NULL"
+	if nullable {
+		nullClause = "NULL"
+	}
+	if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` INT %s", table, column, nullClause)).Error; err != nil {
 		log.Printf("Warning: could not narrow column %s.%s to INT: %v", table, column, err)
 	}
 }
