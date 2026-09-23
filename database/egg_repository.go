@@ -21,11 +21,14 @@ func IsDuplicateEggDate(err error) bool {
 	return strings.Contains(msg, "duplicate") && strings.Contains(msg, "coop_id")
 }
 
-// CreateEgg creates a new egg record in the database
-func CreateEgg(req *models.CreateEggRequest) (*models.Egg, error) {
-	// Verify that the coop exists
-	if _, err := GetCoopByID(req.CoopID); err != nil {
-		return nil, fmt.Errorf("coop not found: %v", err)
+// CreateEgg creates a new egg record in the database, only if req.CoopID belongs to userID
+func CreateEgg(req *models.CreateEggRequest, userID int) (*models.Egg, error) {
+	owned, err := CoopBelongsToUser(req.CoopID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return nil, ErrNotFound
 	}
 
 	egg := &models.Egg{
@@ -49,15 +52,15 @@ func CreateEgg(req *models.CreateEggRequest) (*models.Egg, error) {
 	return egg, nil
 }
 
-// GetEggByID retrieves an egg record by ID
-func GetEggByID(eggID int) (*models.Egg, error) {
+// GetEggByID retrieves an egg record by ID, only if its coop belongs to userID
+func GetEggByID(eggID int, userID int) (*models.Egg, error) {
 	var egg *models.Egg
 
 	if err := DB.Preload("Coop").
-		Where("egg_id = ?", eggID).
+		Where("egg_id = ? AND coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", eggID, userID).
 		First(&egg).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("egg record not found")
+			return nil, ErrNotFound
 		}
 		log.Printf("Error fetching egg record: %v", err)
 		return nil, err
@@ -66,13 +69,16 @@ func GetEggByID(eggID int) (*models.Egg, error) {
 	return egg, nil
 }
 
-// GetEggsByCoopID retrieves all egg records for a specific coop
-func GetEggsByCoopID(coopID int) ([]models.Egg, error) {
+// GetEggsByCoopID retrieves all egg records for a specific coop, only if it belongs to userID
+func GetEggsByCoopID(coopID int, userID int) ([]models.Egg, error) {
 	var eggs []models.Egg
 
-	// Verify that the coop exists
-	if _, err := GetCoopByID(coopID); err != nil {
-		return nil, fmt.Errorf("coop not found: %v", err)
+	owned, err := CoopBelongsToUser(coopID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return nil, ErrNotFound
 	}
 
 	if err := DB.Preload("Coop").
@@ -86,11 +92,12 @@ func GetEggsByCoopID(coopID int) ([]models.Egg, error) {
 	return eggs, nil
 }
 
-// GetAllEggs retrieves all egg records from the database
-func GetAllEggs() ([]models.Egg, error) {
+// GetAllEggs retrieves every egg record belonging to any of userID's coops
+func GetAllEggs(userID int) ([]models.Egg, error) {
 	var eggs []models.Egg
 
 	if err := DB.Preload("Coop").
+		Where("coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", userID).
 		Order("date_collect_egg DESC").
 		Find(&eggs).Error; err != nil {
 		log.Printf("Error fetching all egg records: %v", err)
@@ -100,17 +107,21 @@ func GetAllEggs() ([]models.Egg, error) {
 	return eggs, nil
 }
 
-// UpdateEgg updates an existing egg record
-func UpdateEgg(eggID int, req *models.UpdateEggRequest) (*models.Egg, error) {
-	egg, err := GetEggByID(eggID)
+// UpdateEgg updates an existing egg record, only if it (and any target coop) belongs to userID
+func UpdateEgg(eggID int, req *models.UpdateEggRequest, userID int) (*models.Egg, error) {
+	egg, err := GetEggByID(eggID, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// If CoopID is provided, verify it exists
+	// If CoopID is provided, verify the target coop exists and belongs to userID too
 	if req.CoopID > 0 && req.CoopID != egg.CoopID {
-		if _, err := GetCoopByID(req.CoopID); err != nil {
-			return nil, fmt.Errorf("target coop not found: %v", err)
+		owned, err := CoopBelongsToUser(req.CoopID, userID)
+		if err != nil {
+			return nil, err
+		}
+		if !owned {
+			return nil, ErrNotFound
 		}
 	}
 
@@ -143,9 +154,9 @@ func UpdateEgg(eggID int, req *models.UpdateEggRequest) (*models.Egg, error) {
 	return egg, nil
 }
 
-// DeleteEgg deletes an egg record from the database
-func DeleteEgg(eggID int) error {
-	egg, err := GetEggByID(eggID)
+// DeleteEgg deletes an egg record from the database, only if its coop belongs to userID
+func DeleteEgg(eggID int, userID int) error {
+	egg, err := GetEggByID(eggID, userID)
 	if err != nil {
 		return err
 	}

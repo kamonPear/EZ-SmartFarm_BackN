@@ -15,11 +15,14 @@ func normalizeHealthDate(t time.Time) time.Time {
 	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.Local)
 }
 
-// CreateHealth creates a new health record in the database
-func CreateHealth(req *models.CreateHealthRequest) (*models.Health, error) {
-	// Verify coop exists
-	if _, err := GetCoopByID(req.CoopID); err != nil {
-		return nil, fmt.Errorf("coop not found: %v", err)
+// CreateHealth creates a new health record in the database, only if req.CoopID belongs to userID
+func CreateHealth(req *models.CreateHealthRequest, userID int) (*models.Health, error) {
+	owned, err := CoopBelongsToUser(req.CoopID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return nil, ErrNotFound
 	}
 
 	normalizedDate := normalizeHealthDate(req.RecordDate)
@@ -41,13 +44,15 @@ func CreateHealth(req *models.CreateHealthRequest) (*models.Health, error) {
 	return health, nil
 }
 
-// GetHealthByID retrieves a health record by ID
-func GetHealthByID(id int) (*models.Health, error) {
+// GetHealthByID retrieves a health record by ID, only if its coop belongs to userID
+func GetHealthByID(id int, userID int) (*models.Health, error) {
 	var h *models.Health
 
-	if err := DB.Preload("Coop").Where("health_id = ?", id).First(&h).Error; err != nil {
+	if err := DB.Preload("Coop").
+		Where("health_id = ? AND coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", id, userID).
+		First(&h).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("health record not found")
+			return nil, ErrNotFound
 		}
 		log.Printf("Error fetching health record: %v", err)
 		return nil, err
@@ -56,13 +61,16 @@ func GetHealthByID(id int) (*models.Health, error) {
 	return h, nil
 }
 
-// GetHealthsByCoopID retrieves all health records for a specific coop
-func GetHealthsByCoopID(coopID int) ([]models.Health, error) {
+// GetHealthsByCoopID retrieves all health records for a specific coop, only if it belongs to userID
+func GetHealthsByCoopID(coopID int, userID int) ([]models.Health, error) {
 	var hs []models.Health
 
-	// Verify coop exists
-	if _, err := GetCoopByID(coopID); err != nil {
-		return nil, fmt.Errorf("coop not found: %v", err)
+	owned, err := CoopBelongsToUser(coopID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return nil, ErrNotFound
 	}
 
 	// 🌟 แก้ "record_date" -> "date" ให้ตรงกับชื่อคอลัมน์จริงในตาราง health
@@ -74,12 +82,13 @@ func GetHealthsByCoopID(coopID int) ([]models.Health, error) {
 	return hs, nil
 }
 
-// GetAllHealths retrieves all health records
-func GetAllHealths() ([]models.Health, error) {
+// GetAllHealths retrieves every health record belonging to any of userID's coops
+func GetAllHealths(userID int) ([]models.Health, error) {
 	var hs []models.Health
 
-	// 🌟 แก้ "record_date" -> "date" ให้ตรงกับชื่อคอลัมน์จริงในตาราง health
-	if err := DB.Preload("Coop").Order("date DESC").Find(&hs).Error; err != nil {
+	if err := DB.Preload("Coop").
+		Where("coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", userID).
+		Order("date DESC").Find(&hs).Error; err != nil {
 		log.Printf("Error fetching all health records: %v", err)
 		return nil, err
 	}
@@ -87,17 +96,21 @@ func GetAllHealths() ([]models.Health, error) {
 	return hs, nil
 }
 
-// UpdateHealth updates an existing health record
-func UpdateHealth(id int, req *models.UpdateHealthRequest) (*models.Health, error) {
-	h, err := GetHealthByID(id)
+// UpdateHealth updates an existing health record, only if it (and any target coop) belongs to userID
+func UpdateHealth(id int, req *models.UpdateHealthRequest, userID int) (*models.Health, error) {
+	h, err := GetHealthByID(id, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// if coop change provided, validate
+	// if coop change provided, validate it belongs to userID too
 	if req.CoopID > 0 && req.CoopID != h.CoopID {
-		if _, err := GetCoopByID(req.CoopID); err != nil {
-			return nil, fmt.Errorf("target coop not found: %v", err)
+		owned, err := CoopBelongsToUser(req.CoopID, userID)
+		if err != nil {
+			return nil, err
+		}
+		if !owned {
+			return nil, ErrNotFound
 		}
 	}
 
@@ -136,9 +149,9 @@ func UpdateHealth(id int, req *models.UpdateHealthRequest) (*models.Health, erro
 	return h, nil
 }
 
-// DeleteHealth deletes a health record
-func DeleteHealth(id int) error {
-	h, err := GetHealthByID(id)
+// DeleteHealth deletes a health record, only if its coop belongs to userID
+func DeleteHealth(id int, userID int) error {
+	h, err := GetHealthByID(id, userID)
 	if err != nil {
 		return err
 	}
@@ -180,23 +193,24 @@ type HealthNotification struct {
 	IsToday  bool   `json:"is_today"`
 }
 
-// GetHealthCheckNotifications ดึงข้อมูลคอกที่ต้องตรวจสุขภาพของ "วันนี้" และ "พรุ่งนี้"
-func GetHealthCheckNotifications() ([]HealthNotification, error) {
+// GetHealthCheckNotifications ดึงข้อมูลคอกที่ต้องตรวจสุขภาพของ "วันนี้" และ "พรุ่งนี้" ของ userID เท่านั้น
+func GetHealthCheckNotifications(userID int) ([]HealthNotification, error) {
 	var dbResults []HealthNotiDB
 
 	now := time.Now().In(time.Local)
 	todayStr := now.Format("2006-01-02")
 	tomorrowStr := now.AddDate(0, 0, 1).Format("2006-01-02")
 
-	// ดึง coop_id มาโดยตรงจากตาราง health
+	// ดึง coop_id มาโดยตรงจากตาราง health เฉพาะคอกของ userID
 	query := `
-		SELECT coop_id, 
-		       CASE WHEN DATE(date) = ? THEN 1 ELSE 0 END as is_today 
+		SELECT health.coop_id,
+		       CASE WHEN DATE(health.date) = ? THEN 1 ELSE 0 END as is_today
 		FROM health
-		WHERE DATE(date) = ? OR DATE(date) = ?
+		JOIN coop ON coop.coop_id = health.coop_id
+		WHERE (DATE(health.date) = ? OR DATE(health.date) = ?) AND coop.user_id = ?
 	`
-	
-	err := DB.Raw(query, todayStr, todayStr, tomorrowStr).Scan(&dbResults).Error
+
+	err := DB.Raw(query, todayStr, todayStr, tomorrowStr, userID).Scan(&dbResults).Error
 	if err != nil {
 		log.Printf("Error fetching health check notifications: %v", err)
 		return nil, err
@@ -206,7 +220,7 @@ func GetHealthCheckNotifications() ([]HealthNotification, error) {
 	var notifications []HealthNotification
 	for _, r := range dbResults {
 		notifications = append(notifications, HealthNotification{
-			CoopName: fmt.Sprintf("%d", r.CoopID), 
+			CoopName: fmt.Sprintf("%d", r.CoopID),
 			IsToday:  r.IsToday == 1,
 		})
 	}

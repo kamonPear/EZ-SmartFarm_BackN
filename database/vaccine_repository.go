@@ -6,11 +6,14 @@ import (
 	"time"
 
 	"EZ-SmartFarm_BachN/models"
+
+	"gorm.io/gorm"
 )
 
 // CreateVaccine creates a new vaccine administration record for a coop.
-// The coop must already be loaded (via GetCoopByID) so name_coop/birthday can be
-// copied onto the vaccine row to satisfy the fk_name_coop_vaccines constraint.
+// The coop must already be loaded (via a caller that verified ownership) so
+// name_coop/birthday can be copied onto the vaccine row to satisfy the
+// fk_name_coop_vaccines constraint.
 func CreateVaccine(req *models.CreateVaccineRequest, coop *models.Coop) (*models.Vaccine, error) {
 	vaccine := models.Vaccine{
 		CoopID:         req.CoopID,
@@ -32,12 +35,15 @@ func CreateVaccine(req *models.CreateVaccineRequest, coop *models.Coop) (*models
 	return &vaccine, nil
 }
 
-// GetVaccineByID retrieves a vaccine record by vaccine ID
-func GetVaccineByID(vaccineID int) (*models.Vaccine, error) {
+// GetVaccineByID retrieves a vaccine record by vaccine ID, only if its coop belongs to userID
+func GetVaccineByID(vaccineID int, userID int) (*models.Vaccine, error) {
 	var vaccine models.Vaccine
 
-	result := DB.Where("vaccine_id = ?", vaccineID).First(&vaccine)
+	result := DB.Where("vaccine_id = ? AND coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", vaccineID, userID).First(&vaccine)
 	if result.Error != nil {
+		if result.Error == gorm.ErrRecordNotFound {
+			return nil, ErrNotFound
+		}
 		log.Printf("Error retrieving vaccine by ID %d: %v", vaccineID, result.Error)
 		return nil, result.Error
 	}
@@ -45,9 +51,17 @@ func GetVaccineByID(vaccineID int) (*models.Vaccine, error) {
 	return &vaccine, nil
 }
 
-// GetVaccinesByCoopID retrieves all vaccine records for a specific coop
-func GetVaccinesByCoopID(coopID int) ([]models.Vaccine, error) {
+// GetVaccinesByCoopID retrieves all vaccine records for a specific coop, only if it belongs to userID
+func GetVaccinesByCoopID(coopID int, userID int) ([]models.Vaccine, error) {
 	var vaccines []models.Vaccine
+
+	owned, err := CoopBelongsToUser(coopID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !owned {
+		return nil, ErrNotFound
+	}
 
 	result := DB.Where("coop_id = ?", coopID).Find(&vaccines)
 	if result.Error != nil {
@@ -58,11 +72,13 @@ func GetVaccinesByCoopID(coopID int) ([]models.Vaccine, error) {
 	return vaccines, nil
 }
 
-// GetAllVaccines retrieves all vaccine records from database
-func GetAllVaccines() ([]models.Vaccine, error) {
+// GetAllVaccines retrieves every vaccine record belonging to any of userID's coops
+func GetAllVaccines(userID int) ([]models.Vaccine, error) {
 	var vaccines []models.Vaccine
 
-	err := DB.Debug().Preload("Coop").Find(&vaccines).Error
+	err := DB.Preload("Coop").
+		Where("coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", userID).
+		Find(&vaccines).Error
 
 	if err != nil {
 		log.Printf("Error retrieving all vaccines: %v", err)
@@ -71,12 +87,12 @@ func GetAllVaccines() ([]models.Vaccine, error) {
 	return vaccines, err
 }
 
-// UpdateVaccine updates an existing vaccine record. Fields left zero-valued
-// on req are left unchanged. Uses load-mutate-Save (not a map .Updates()) so
-// the Vaccine.BeforeSave hook re-syncs the legacy "name" column from the
+// UpdateVaccine updates an existing vaccine record, only if its coop belongs to userID.
+// Fields left zero-valued on req are left unchanged. Uses load-mutate-Save (not a map
+// .Updates()) so the Vaccine.BeforeSave hook re-syncs the legacy "name" column from the
 // actual updated Name instead of from a zero-valued receiver struct.
-func UpdateVaccine(id int, req *models.UpdateVaccineRequest) (*models.Vaccine, error) {
-	vaccine, err := GetVaccineByID(id)
+func UpdateVaccine(id int, req *models.UpdateVaccineRequest, userID int) (*models.Vaccine, error) {
+	vaccine, err := GetVaccineByID(id, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -105,17 +121,17 @@ func UpdateVaccine(id int, req *models.UpdateVaccineRequest) (*models.Vaccine, e
 	return vaccine, nil
 }
 
-// DeleteVaccine deletes a vaccine record by vaccine ID
-func DeleteVaccine(vaccineID int) error {
-	result := DB.Where("vaccine_id = ?", vaccineID).Delete(&models.Vaccine{})
+// DeleteVaccine deletes a vaccine record by vaccine ID, only if its coop belongs to userID
+func DeleteVaccine(vaccineID int, userID int) error {
+	vaccine, err := GetVaccineByID(vaccineID, userID)
+	if err != nil {
+		return err
+	}
+
+	result := DB.Delete(vaccine)
 	if result.Error != nil {
 		log.Printf("Error deleting vaccine ID %d: %v", vaccineID, result.Error)
 		return result.Error
-	}
-
-	if result.RowsAffected == 0 {
-		log.Printf("No vaccine found with ID %d", vaccineID)
-		return fmt.Errorf("no vaccine found with ID %d", vaccineID)
 	}
 
 	log.Printf("Successfully deleted vaccine ID %d", vaccineID)
@@ -134,6 +150,18 @@ func DeleteVaccinesByCoopID(coopID int) error {
 	return nil
 }
 
+// DeleteVaccinesByCoopIDForUser deletes all vaccine records for a coop, only if it belongs to userID
+func DeleteVaccinesByCoopIDForUser(coopID int, userID int) error {
+	owned, err := CoopBelongsToUser(coopID, userID)
+	if err != nil {
+		return err
+	}
+	if !owned {
+		return ErrNotFound
+	}
+	return DeleteVaccinesByCoopID(coopID)
+}
+
 // ==========================================
 // 🌟 ส่วนระบบแจ้งเตือน 🌟
 // ==========================================
@@ -145,14 +173,14 @@ type PendingVaccineAlert struct {
 	Time  string `json:"time"`
 }
 
-// GetPendingVaccinesAlerts ฟังก์ชันคำนวณวัคซีนที่ถึงกำหนด
-func GetPendingVaccinesAlerts() ([]PendingVaccineAlert, error) {
+// GetPendingVaccinesAlerts ฟังก์ชันคำนวณวัคซีนที่ถึงกำหนด เฉพาะคอกของ userID
+func GetPendingVaccinesAlerts(userID int) ([]PendingVaccineAlert, error) {
 	var coops []models.Coop
 	var schedules []models.MedicineSchedule
 	var alerts []PendingVaccineAlert
 
-	// 1. ดึงข้อมูลคอกไก่ทั้งหมด
-	if err := DB.Find(&coops).Error; err != nil {
+	// 1. ดึงข้อมูลคอกไก่ทั้งหมดของ userID
+	if err := DB.Where("user_id = ?", userID).Find(&coops).Error; err != nil {
 		return nil, err
 	}
 

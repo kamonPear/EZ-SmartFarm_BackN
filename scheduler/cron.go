@@ -18,11 +18,12 @@ func SetupJobs() {
 	_, err := c.AddFunc("0 0 * * *", func() {
 		log.Println("⏰ [Cron] กำลังตัดสต็อกอาหารประจำวัน (เม็ดเล็ก 20 kg, เม็ดใหญ่ 30 kg)...")
 
-		// ตัดสต็อกแต่ละประเภทแยกกัน คนละอัตราต่อวัน
-		if err := database.DeductFoodstockByType(models.FoodTypeSmallPellet, 20.0); err != nil {
+		// ตัดสต็อกแต่ละประเภทแยกกัน คนละอัตราต่อวัน ให้ทุกผู้ใช้ในระบบ (cron ไม่มี
+		// ผู้ใช้ที่ล็อกอินอยู่ให้ผูก context ด้วย จึงตัดสต็อกของทุกบัญชีเท่ากัน)
+		if err := database.DeductFoodstockByTypeAllUsers(models.FoodTypeSmallPellet, 20.0); err != nil {
 			log.Printf("❌ [Cron] ตัดสต็อกเม็ดเล็กล้มเหลว: %v\n", err)
 		}
-		if err := database.DeductFoodstockByType(models.FoodTypeLargePellet, 30.0); err != nil {
+		if err := database.DeductFoodstockByTypeAllUsers(models.FoodTypeLargePellet, 30.0); err != nil {
 			log.Printf("❌ [Cron] ตัดสต็อกเม็ดใหญ่ล้มเหลว: %v\n", err)
 		}
 	})

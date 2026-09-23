@@ -2,14 +2,16 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 
+	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/database"
 	"EZ-SmartFarm_BachN/models"
 )
 
-// GetFarmLayoutHandler retrieves the farm's chosen outline shape
+// GetFarmLayoutHandler retrieves the caller's chosen outline shape
 // GET /api/farm-layout
 func GetFarmLayoutHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -18,7 +20,13 @@ func GetFarmLayoutHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	layout, err := database.GetFarmLayout()
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	layout, err := database.GetFarmLayout(userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to fetch farm layout: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to fetch farm layout", http.StatusInternalServerError)
@@ -29,12 +37,18 @@ func GetFarmLayoutHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(layout)
 }
 
-// UpdateFarmLayoutHandler sets the farm's chosen outline shape
+// UpdateFarmLayoutHandler sets the caller's chosen outline shape
 // PUT /api/farm-layout  body: {"shape": "circle"}
 func UpdateFarmLayoutHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -51,7 +65,7 @@ func UpdateFarmLayoutHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	layout, err := database.UpdateFarmLayoutShape(req.Shape)
+	layout, err := database.UpdateFarmLayoutShape(req.Shape, userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to update farm layout: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to update farm layout", http.StatusInternalServerError)
@@ -72,6 +86,12 @@ func UpdateCoopPositionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	var req models.UpdateCoopPositionsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[%s] %s - %d (Invalid request body)", r.Method, r.RequestURI, http.StatusBadRequest)
@@ -79,7 +99,12 @@ func UpdateCoopPositionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.UpdateCoopPositions(req.Positions); err != nil {
+	if err := database.UpdateCoopPositions(req.Positions, userID); err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			log.Printf("[%s] %s - %d (Coop not found)", r.Method, r.RequestURI, http.StatusNotFound)
+			http.Error(w, "Coop not found", http.StatusNotFound)
+			return
+		}
 		log.Printf("[%s] %s - %d (Failed to update coop positions: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to update coop positions", http.StatusInternalServerError)
 		return
