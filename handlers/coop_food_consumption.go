@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/database"
 	"EZ-SmartFarm_BachN/models"
 )
@@ -23,7 +24,13 @@ func GetCoopFoodConsumptionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	coops, err := database.GetAllCoops()
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	coops, err := database.GetAllCoops(userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to fetch coops: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to fetch coops", http.StatusInternalServerError)

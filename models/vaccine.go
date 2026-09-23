@@ -10,7 +10,7 @@ import (
 type Vaccine struct {
 	VaccineID      int        `gorm:"primaryKey;column:vaccine_id" json:"vaccine_id"`
 	
-	CoopID         int        `gorm:"column:coop_id;type:int;index;not null" json:"coop_id"`
+	CoopID         int        `gorm:"column:coop_id;type:int;size:32;index;not null" json:"coop_id"`
 	NameCoop       string     `gorm:"column:name_coop;type:varchar(100);index" json:"name_coop"`
 	
 	Birthday       *time.Time `gorm:"column:birthday;type:date" json:"birthday"`

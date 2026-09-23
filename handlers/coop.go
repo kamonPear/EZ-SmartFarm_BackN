@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
 
+	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/database"
 	"EZ-SmartFarm_BachN/models"
 )
@@ -16,6 +18,12 @@ func CreateCoopHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -34,7 +42,7 @@ func CreateCoopHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	coop, err := database.CreateCoop(&req)
+	coop, err := database.CreateCoop(&req, userID)
 	if err != nil {
 		if database.IsDuplicateNameCoop(err) {
 			log.Printf("[%s] %s - %d (Duplicate coop name)", r.Method, r.RequestURI, http.StatusConflict)
@@ -61,6 +69,12 @@ func GetCoopHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	// Extract ID from query parameter
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
@@ -76,7 +90,7 @@ func GetCoopHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	coop, err := database.GetCoopByID(id)
+	coop, err := database.GetCoopByIDForUser(id, userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Coop not found)", r.Method, r.RequestURI, http.StatusNotFound)
 		http.Error(w, "Coop not found", http.StatusNotFound)
@@ -88,7 +102,7 @@ func GetCoopHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(coop)
 }
 
-// GetAllCoopsHandler retrieves all coops
+// GetAllCoopsHandler retrieves all coops owned by the caller
 // GET /api/coops
 func GetAllCoopsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -97,7 +111,13 @@ func GetAllCoopsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	coops, err := database.GetAllCoops()
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	coops, err := database.GetAllCoops(userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to fetch coops: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to fetch coops", http.StatusInternalServerError)
@@ -115,6 +135,12 @@ func UpdateCoopHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -140,8 +166,13 @@ func UpdateCoopHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	coop, err := database.UpdateCoop(id, &req)
+	coop, err := database.UpdateCoop(id, &req, userID)
 	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			log.Printf("[%s] %s - %d (Coop not found)", r.Method, r.RequestURI, http.StatusNotFound)
+			http.Error(w, "Coop not found", http.StatusNotFound)
+			return
+		}
 		if database.IsDuplicateNameCoop(err) {
 			log.Printf("[%s] %s - %d (Duplicate coop name)", r.Method, r.RequestURI, http.StatusConflict)
 			http.Error(w, "Coop name already exists", http.StatusConflict)
@@ -166,6 +197,12 @@ func DeleteCoopHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
 		log.Printf("[%s] %s - %d (Missing coop id parameter)", r.Method, r.RequestURI, http.StatusBadRequest)
@@ -180,7 +217,12 @@ func DeleteCoopHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.DeleteCoop(id); err != nil {
+	if err := database.DeleteCoop(id, userID); err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			log.Printf("[%s] %s - %d (Coop not found)", r.Method, r.RequestURI, http.StatusNotFound)
+			http.Error(w, "Coop not found", http.StatusNotFound)
+			return
+		}
 		log.Printf("[%s] %s - %d (Failed to delete coop: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to delete coop", http.StatusInternalServerError)
 		return

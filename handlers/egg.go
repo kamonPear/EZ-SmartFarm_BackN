@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
+	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/database"
 	"EZ-SmartFarm_BachN/models"
 )
@@ -14,6 +16,12 @@ import (
 func CreateEggHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -30,8 +38,12 @@ func CreateEggHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	egg, err := database.CreateEgg(&req)
+	egg, err := database.CreateEgg(&req, userID)
 	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			http.Error(w, "Coop not found", http.StatusNotFound)
+			return
+		}
 		if database.IsDuplicateEggDate(err) {
 			http.Error(w, "Egg record for this coop and date already exists", http.StatusConflict)
 			return
@@ -53,6 +65,12 @@ func GetEggHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	// Extract ID from query parameter
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
@@ -66,7 +84,7 @@ func GetEggHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	egg, err := database.GetEggByID(id)
+	egg, err := database.GetEggByID(id, userID)
 	if err != nil {
 		http.Error(w, "Egg record not found", http.StatusNotFound)
 		return
@@ -84,6 +102,12 @@ func GetEggsByCoopHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	// Extract coop_id from query parameter
 	coopIDStr := r.URL.Query().Get("coop_id")
 	if coopIDStr == "" {
@@ -97,8 +121,12 @@ func GetEggsByCoopHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eggs, err := database.GetEggsByCoopID(coopID)
+	eggs, err := database.GetEggsByCoopID(coopID, userID)
 	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			http.Error(w, "Coop not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -118,7 +146,13 @@ func GetAllEggsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eggs, err := database.GetAllEggs()
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	eggs, err := database.GetAllEggs(userID)
 	if err != nil {
 		http.Error(w, "Failed to fetch egg records", http.StatusInternalServerError)
 		return
@@ -136,6 +170,12 @@ func GetAllEggsHandler(w http.ResponseWriter, r *http.Request) {
 func UpdateEggHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -158,8 +198,12 @@ func UpdateEggHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	egg, err := database.UpdateEgg(id, &req)
+	egg, err := database.UpdateEgg(id, &req, userID)
 	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			http.Error(w, "Egg record not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -176,6 +220,12 @@ func DeleteEggHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
 		http.Error(w, "Missing egg id parameter", http.StatusBadRequest)
@@ -188,7 +238,11 @@ func DeleteEggHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.DeleteEgg(id); err != nil {
+	if err := database.DeleteEgg(id, userID); err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			http.Error(w, "Egg record not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, "Failed to delete egg record", http.StatusInternalServerError)
 		return
 	}

@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
 
+	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/database"
 	"EZ-SmartFarm_BachN/models"
 )
@@ -27,6 +29,12 @@ func CreateHealthHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	var req models.CreateHealthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -38,8 +46,12 @@ func CreateHealthHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	health, err := database.CreateHealth(&req)
+	health, err := database.CreateHealth(&req, userID)
 	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			http.Error(w, "Coop not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -56,6 +68,13 @@ func GetHealthHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
 		http.Error(w, "Missing health id parameter", http.StatusBadRequest)
@@ -66,7 +85,7 @@ func GetHealthHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid health id", http.StatusBadRequest)
 		return
 	}
-	h, err := database.GetHealthByID(id)
+	h, err := database.GetHealthByID(id, userID)
 	if err != nil {
 		http.Error(w, "Health record not found", http.StatusNotFound)
 		return
@@ -82,6 +101,13 @@ func GetHealthsByCoopHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	coopIDStr := r.URL.Query().Get("coop_id")
 	if coopIDStr == "" {
 		http.Error(w, "Missing coop_id parameter", http.StatusBadRequest)
@@ -92,8 +118,12 @@ func GetHealthsByCoopHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid coop_id", http.StatusBadRequest)
 		return
 	}
-	hs, err := database.GetHealthsByCoopID(coopID)
+	hs, err := database.GetHealthsByCoopID(coopID, userID)
 	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			http.Error(w, "Coop not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -111,7 +141,14 @@ func GetAllHealthsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	hs, err := database.GetAllHealths()
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	hs, err := database.GetAllHealths(userID)
 	if err != nil {
 		http.Error(w, "Failed to fetch health records", http.StatusInternalServerError)
 		return
@@ -130,6 +167,13 @@ func UpdateHealthHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
 		http.Error(w, "Missing health id parameter", http.StatusBadRequest)
@@ -145,8 +189,12 @@ func UpdateHealthHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	h, err := database.UpdateHealth(id, &req)
+	h, err := database.UpdateHealth(id, &req, userID)
 	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			http.Error(w, "Health record not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -161,6 +209,13 @@ func DeleteHealthHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	idStr := r.URL.Query().Get("id")
 	if idStr == "" {
 		http.Error(w, "Missing health id parameter", http.StatusBadRequest)
@@ -171,7 +226,11 @@ func DeleteHealthHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid health id", http.StatusBadRequest)
 		return
 	}
-	if err := database.DeleteHealth(id); err != nil {
+	if err := database.DeleteHealth(id, userID); err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			http.Error(w, "Health record not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, "Failed to delete health record", http.StatusInternalServerError)
 		return
 	}

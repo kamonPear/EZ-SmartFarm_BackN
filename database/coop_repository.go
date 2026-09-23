@@ -20,9 +20,10 @@ func IsDuplicateNameCoop(err error) bool {
 		(strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique"))
 }
 
-// CreateCoop creates a new coop in the database
-func CreateCoop(req *models.CreateCoopRequest) (*models.Coop, error) {
+// CreateCoop creates a new coop owned by userID
+func CreateCoop(req *models.CreateCoopRequest, userID int) (*models.Coop, error) {
 	coop := &models.Coop{
+		UserID:           userID,
 		NameCoop:         req.NameCoop,
 		DateAdoptAnimals: req.DateAdoptAnimals,
 		Amount:           req.Amount,
@@ -39,7 +40,10 @@ func CreateCoop(req *models.CreateCoopRequest) (*models.Coop, error) {
 	return coop, nil
 }
 
-// GetCoopByID retrieves a coop by ID
+// GetCoopByID retrieves a coop by ID, regardless of owner. Used internally by other
+// repositories (egg/health/vaccine/device creation) to check a coop's mere existence -
+// callers that need to enforce ownership should use GetCoopByIDForUser or
+// CoopBelongsToUser instead.
 func GetCoopByID(coopID int) (*models.Coop, error) {
 	var coop *models.Coop
 
@@ -59,14 +63,37 @@ func GetCoopByID(coopID int) (*models.Coop, error) {
 	return coop, nil
 }
 
-// GetAllCoops retrieves all coops from the database
-func GetAllCoops() ([]models.Coop, error) {
+// GetCoopByIDForUser retrieves a coop by ID, only if it's owned by userID. Returns
+// ErrNotFound both when the coop doesn't exist and when it belongs to someone else -
+// callers must never be able to tell the two cases apart.
+func GetCoopByIDForUser(coopID, userID int) (*models.Coop, error) {
+	var coop *models.Coop
+
+	if err := DB.Preload("Devices").
+		Preload("Eggs").
+		Preload("Health").
+		Preload("Vaccines").
+		Where("coop_id = ? AND user_id = ?", coopID, userID).
+		First(&coop).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrNotFound
+		}
+		log.Printf("Error fetching coop: %v", err)
+		return nil, err
+	}
+
+	return coop, nil
+}
+
+// GetAllCoops retrieves every coop owned by userID
+func GetAllCoops(userID int) ([]models.Coop, error) {
 	var coops []models.Coop
 
 	if err := DB.Preload("Devices").
 		Preload("Eggs").
 		Preload("Health").
 		Preload("Vaccines").
+		Where("user_id = ?", userID).
 		Find(&coops).Error; err != nil {
 		log.Printf("Error fetching coops: %v", err)
 		return nil, err
@@ -75,9 +102,9 @@ func GetAllCoops() ([]models.Coop, error) {
 	return coops, nil
 }
 
-// UpdateCoop updates an existing coop
-func UpdateCoop(coopID int, req *models.UpdateCoopRequest) (*models.Coop, error) {
-	coop, err := GetCoopByID(coopID)
+// UpdateCoop updates an existing coop, only if it's owned by userID
+func UpdateCoop(coopID int, req *models.UpdateCoopRequest, userID int) (*models.Coop, error) {
+	coop, err := GetCoopByIDForUser(coopID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -117,12 +144,22 @@ func UpdateCoop(coopID int, req *models.UpdateCoopRequest) (*models.Coop, error)
 // UpdateCoopPositions batch-saves every coop's position on the farm layout canvas in one
 // transaction. Uses a direct map update (not the zero-skipping UpdateCoop helper) since
 // PosX/PosY are pointers - a real 0,0 position, or unplacing a coop via nil, must always
-// be written rather than silently skipped.
-func UpdateCoopPositions(entries []models.CoopPositionEntry) error {
+// be written rather than silently skipped. Every coop_id in entries must be owned by
+// userID, or the whole batch is rejected with ErrNotFound before anything is written.
+func UpdateCoopPositions(entries []models.CoopPositionEntry, userID int) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
 		for _, e := range entries {
+			ok, err := CoopBelongsToUser(e.CoopID, userID)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return ErrNotFound
+			}
+		}
+		for _, e := range entries {
 			if err := tx.Model(&models.Coop{}).
-				Where("coop_id = ?", e.CoopID).
+				Where("coop_id = ? AND user_id = ?", e.CoopID, userID).
 				Updates(map[string]interface{}{"pos_x": e.PosX, "pos_y": e.PosY}).Error; err != nil {
 				log.Printf("Error updating position for coop %d: %v", e.CoopID, err)
 				return err
@@ -132,9 +169,9 @@ func UpdateCoopPositions(entries []models.CoopPositionEntry) error {
 	})
 }
 
-// DeleteCoop deletes a coop and all related records
-func DeleteCoop(coopID int) error {
-	coop, err := GetCoopByID(coopID)
+// DeleteCoop deletes a coop and all related records, only if it's owned by userID
+func DeleteCoop(coopID int, userID int) error {
+	coop, err := GetCoopByIDForUser(coopID, userID)
 	if err != nil {
 		return err
 	}

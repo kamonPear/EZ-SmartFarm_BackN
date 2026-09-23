@@ -5,6 +5,7 @@ import "time"
 // ImportFood represents a single food import lot (history of every food import)
 type ImportFood struct {
 	LotID        int       `gorm:"primaryKey;autoIncrement;column:lot_id;type:int" json:"lot_id"`
+	UserID       int       `gorm:"column:user_id;type:int;size:32;index" json:"user_id"`
 	FoodType     string    `gorm:"column:food_type;type:varchar(20)" json:"food_type"`
 	ImportVolume int       `gorm:"column:import_volume;type:int;not null" json:"import_volume"`
 	ImportDate   time.Time `gorm:"column:import_date;type:datetime;not null" json:"import_date"`
