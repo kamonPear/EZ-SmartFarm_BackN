@@ -15,11 +15,13 @@
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- 1. User table: add role + timestamps
+-- 1. User table: add timestamps.
+--    There is deliberately no `role` column - every account is just a user.
+--    Account creation is gated by the ADMIN_API_KEY secret (X-Admin-Key header),
+--    not by a per-user role.
 -- -----------------------------------------------------------------------------
 ALTER TABLE `User`
-  ADD COLUMN `role` VARCHAR(20) NOT NULL DEFAULT 'user' AFTER `password`,
-  ADD COLUMN `created_at` DATETIME NULL AFTER `role`,
+  ADD COLUMN `created_at` DATETIME NULL AFTER `password`,
   ADD COLUMN `updated_at` DATETIME NULL AFTER `created_at`;
 
 -- -----------------------------------------------------------------------------
@@ -49,8 +51,8 @@ ALTER TABLE `farm_layout` ADD UNIQUE INDEX `uq_farm_layout_user` (`user_id`);
 -- because it needs a bcrypt hash, which plain SQL can't generate. This is here
 -- purely so the shape of what gets inserted is documented/auditable.
 -- -----------------------------------------------------------------------------
--- INSERT INTO `User` (`username`, `password`, `role`, `created_at`, `updated_at`)
--- VALUES ('admin', '<bcrypt-hash-of-a-randomly-generated-password>', 'admin', NOW(), NOW());
+-- INSERT INTO `User` (`username`, `password`, `created_at`, `updated_at`)
+-- VALUES ('admin', '<bcrypt-hash-of-a-randomly-generated-password>', NOW(), NOW());
 
 -- -----------------------------------------------------------------------------
 -- 4. Backfill: every pre-existing row (created before this migration ran) has

@@ -56,10 +56,9 @@ ALTER TABLE `food_distribution` DROP INDEX `idx_food_distribution_user_id`, DROP
 ALTER TABLE `farm_layout`                                                  DROP COLUMN `user_id`;
 
 -- -----------------------------------------------------------------------------
--- 4. Drop role/created_at/updated_at from User. The table itself, and every
---    existing row (including the bootstrap admin), is left untouched.
+-- 4. Drop created_at/updated_at from User. The table itself, and every existing
+--    row (including the first bootstrapped account), is left untouched.
 -- -----------------------------------------------------------------------------
 ALTER TABLE `User`
-  DROP COLUMN `role`,
   DROP COLUMN `created_at`,
   DROP COLUMN `updated_at`;

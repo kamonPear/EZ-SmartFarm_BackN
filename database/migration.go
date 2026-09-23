@@ -106,12 +106,12 @@ var ownedTables = []string{"coop", "foodstock", "importfood", "food_distribution
 
 // ensureAdminBootstrapAndOwnership is the one-time (but safe-to-rerun) migration step
 // that turns on per-user data ownership on a database that predates it:
-//  1. If no admin user exists yet, create one with a freshly generated random password
-//     (logged once to stdout and written to database/scripts/ADMIN_CREDENTIALS.local.txt
-//     - gitignored, local-machine only).
+//  1. If the User table is empty, create a first account with a freshly generated random
+//     password (logged once to stdout and written to
+//     database/scripts/ADMIN_CREDENTIALS.local.txt - gitignored, local-machine only).
 //  2. Backfill every pre-existing row in ownedTables that has no owner yet (user_id
-//     IS NULL, i.e. it existed before this migration) onto that admin user, so nothing
-//     already in the live database becomes orphaned or inaccessible.
+//     IS NULL, i.e. it existed before this migration) onto the earliest account, so
+//     nothing already in the live database becomes orphaned or inaccessible.
 //  3. Add a real FK (user_id -> User.id_User, ON DELETE RESTRICT) on each of those
 //     tables, using the same guarded ensureForeignKey helper as every other FK in this
 //     file, so it's a no-op on every subsequent boot.
@@ -152,11 +152,14 @@ func ensureAdminBootstrapAndOwnership(db *gorm.DB) error {
 	return nil
 }
 
-// ensureBootstrapAdmin returns the id of an existing admin user, creating one with a
-// freshly generated random password if none exists yet. Safe to call on every boot.
+// ensureBootstrapAdmin returns the id of the account that pre-existing, ownerless rows
+// should be backfilled onto: the earliest registered user. There are no roles in this
+// system, so "earliest account" is the only meaningful stand-in for "the farm's owner".
+// If there are no users at all (a brand-new database), it creates one with a freshly
+// generated random password. Safe to call on every boot.
 func ensureBootstrapAdmin(db *gorm.DB) (int, error) {
 	var existing models.User
-	err := db.Where("role = ?", "admin").Order("id_User ASC").First(&existing).Error
+	err := db.Order("id_User ASC").First(&existing).Error
 	if err == nil {
 		return existing.ID, nil
 	}
@@ -177,7 +180,6 @@ func ensureBootstrapAdmin(db *gorm.DB) (int, error) {
 	admin := models.User{
 		Username: "admin",
 		Password: hashed,
-		Role:     "admin",
 	}
 	if err := db.Create(&admin).Error; err != nil {
 		return 0, fmt.Errorf("create admin user: %w", err)

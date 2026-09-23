@@ -40,7 +40,7 @@ func CreateNewUser(user *models.User) error {
 	return nil
 }
 
-// CreateUser creates a new user with the given username/password hash/role.
+// CreateUser creates a new user with the given username and password hash.
 // Used by the admin-only register endpoint.
 func CreateUser(user *models.User) error {
 	return DB.Create(user).Error
