@@ -1,0 +1,688 @@
+2026/09/23 12:05:27 DEBUG: connecting to host=202.28.34.210 port=3309 db=db66011212001 user=66011212001
+Database connected successfully
+
+2026/09/23 12:05:27 [32mD:/EZ-SmartFarm_BackN/database/db.go:31 [33mSLOW SQL >= 200ms
+[0m[31;1m[215.500ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:28 [32mD:/EZ-SmartFarm_BackN/database/db.go:31 [33mSLOW SQL >= 200ms
+[0m[31;1m[246.903ms] [33m[rows:-][35m SELECT count(*) FROM information_schema.tables WHERE table_schema = 'db66011212001' AND table_name = 'medicine_schedules' AND table_type = 'BASE TABLE'[0m
+
+2026/09/23 12:05:28 [32mD:/EZ-SmartFarm_BackN/database/db.go:31 [33mSLOW SQL >= 200ms
+[0m[31;1m[203.558ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:28 [32mD:/EZ-SmartFarm_BackN/database/db.go:31 [33mSLOW SQL >= 200ms
+[0m[31;1m[230.673ms] [33m[rows:-][35m SELECT column_name, column_default, is_nullable = 'YES', data_type, character_maximum_length, column_type, column_key, extra, column_comment, numeric_precision, numeric_scale , datetime_precision FROM information_schema.columns WHERE table_schema = 'db66011212001' AND table_name = 'medicine_schedules' ORDER BY ORDINAL_POSITION[0m
+
+2026/09/23 12:05:28 [32mD:/EZ-SmartFarm_BackN/database/db.go:31 [33mSLOW SQL >= 200ms
+[0m[31;1m[203.073ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:29 [32mD:/EZ-SmartFarm_BackN/database/db.go:31 [33mSLOW SQL >= 200ms
+[0m[31;1m[204.370ms] [33m[rows:-][35m SELECT count(*) FROM information_schema.tables WHERE table_schema = 'db66011212001' AND table_name = 'coop' AND table_type = 'BASE TABLE'[0m
+
+2026/09/23 12:05:29 [32mD:/EZ-SmartFarm_BackN/database/db.go:31 [33mSLOW SQL >= 200ms
+[0m[31;1m[237.662ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:29 [32mD:/EZ-SmartFarm_BackN/database/db.go:31 [33mSLOW SQL >= 200ms
+[0m[31;1m[218.835ms] [33m[rows:-][35m SELECT column_name, column_default, is_nullable = 'YES', data_type, character_maximum_length, column_type, column_key, extra, column_comment, numeric_precision, numeric_scale , datetime_precision FROM information_schema.columns WHERE table_schema = 'db66011212001' AND table_name = 'coop' ORDER BY ORDINAL_POSITION[0m
+
+2026/09/23 12:05:29 [32mD:/EZ-SmartFarm_BackN/database/db.go:31 [33mSLOW SQL >= 200ms
+[0m[31;1m[204.029ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:30 [32mD:/EZ-SmartFarm_BackN/database/db.go:31 [33mSLOW SQL >= 200ms
+[0m[31;1m[201.875ms] [33m[rows:-][35m SELECT count(*) FROM information_schema.statistics WHERE table_schema = 'db66011212001' AND table_name = 'coop' AND index_name = 'idx_coop_birthday'[0m
+
+2026/09/23 12:05:30 [32mD:/EZ-SmartFarm_BackN/database/db.go:31 [33mSLOW SQL >= 200ms
+[0m[31;1m[226.766ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:30 [32mD:/EZ-SmartFarm_BackN/database/db.go:31 [33mSLOW SQL >= 200ms
+[0m[31;1m[228.006ms] [33m[rows:-][35m SELECT count(*) FROM information_schema.tables WHERE table_schema = 'db66011212001' AND table_name = 'vaccine' AND table_type = 'BASE TABLE'[0m
+
+2026/09/23 12:05:30 [32mD:/EZ-SmartFarm_BackN/database/db.go:31 [33mSLOW SQL >= 200ms
+[0m[31;1m[209.686ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:31 [31;1mD:/EZ-SmartFarm_BackN/database/db.go:31 [35;1mError 3780 (HY000): Referencing column 'coop_id' and referenced column 'coop_id' in foreign key constraint 'fk_coop_vaccines' are incompatible.
+[0m[33m[30.563ms] [34;1m[rows:0][0m ALTER TABLE `vaccine` ADD CONSTRAINT `fk_coop_vaccines` FOREIGN KEY (`coop_id`) REFERENCES `coop`(`coop_id`)
+2026/09/23 12:05:31 Failed to auto migrate database tables: Error 3780 (HY000): Referencing column 'coop_id' and referenced column 'coop_id' in foreign key constraint 'fk_coop_vaccines' are incompatible.
+
+2026/09/23 12:05:32 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[212.066ms] [33m[rows:-][35m SELECT column_name, column_default, is_nullable = 'YES', data_type, character_maximum_length, column_type, column_key, extra, column_comment, numeric_precision, numeric_scale , datetime_precision FROM information_schema.columns WHERE table_schema = 'db66011212001' AND table_name = 'coop' ORDER BY ORDINAL_POSITION[0m
+
+2026/09/23 12:05:32 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[220.578ms] [33m[rows:-][35m SELECT count(*) FROM information_schema.statistics WHERE table_schema = 'db66011212001' AND table_name = 'coop' AND index_name = 'idx_coop_birthday'[0m
+
+2026/09/23 12:05:33 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[206.831ms] [33m[rows:-][35m SELECT count(*) FROM information_schema.tables WHERE table_schema = 'db66011212001' AND table_name = 'foodstock' AND table_type = 'BASE TABLE'[0m
+
+2026/09/23 12:05:33 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[210.757ms] [33m[rows:-][35m SELECT count(*) FROM INFORMATION_SCHEMA.table_constraints WHERE constraint_schema = 'db66011212001' AND table_name = 'foodstock' AND constraint_name = 'chk_foodstock_quantity_current'[0m
+
+2026/09/23 12:05:34 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[211.094ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:34 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[244.595ms] [33m[rows:-][35m SELECT count(*) FROM information_schema.statistics WHERE table_schema = 'db66011212001' AND table_name = 'foodstock' AND index_name = 'idx_foodstock_food_type'[0m
+
+2026/09/23 12:05:34 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[208.497ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:34 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[220.894ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:35 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[214.732ms] [33m[rows:-][35m SELECT count(*) FROM information_schema.tables WHERE table_schema = 'db66011212001' AND table_name = 'food_distribution' AND table_type = 'BASE TABLE'[0m
+
+2026/09/23 12:05:36 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[204.440ms] [33m[rows:-][35m SELECT column_name, column_default, is_nullable = 'YES', data_type, character_maximum_length, column_type, column_key, extra, column_comment, numeric_precision, numeric_scale , datetime_precision FROM information_schema.columns WHERE table_schema = 'db66011212001' AND table_name = 'food_distribution' ORDER BY ORDINAL_POSITION[0m
+
+2026/09/23 12:05:36 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[214.024ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:36 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[212.027ms] [33m[rows:-][35m SELECT count(*) FROM information_schema.tables WHERE table_schema = 'db66011212001' AND table_name = 'farm_layout' AND table_type = 'BASE TABLE'[0m
+
+2026/09/23 12:05:37 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[209.901ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:37 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[200.793ms] [33m[rows:-][35m SELECT column_name, column_default, is_nullable = 'YES', data_type, character_maximum_length, column_type, column_key, extra, column_comment, numeric_precision, numeric_scale , datetime_precision FROM information_schema.columns WHERE table_schema = 'db66011212001' AND table_name = 'farm_layout' ORDER BY ORDINAL_POSITION[0m
+
+2026/09/23 12:05:38 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[218.548ms] [33m[rows:-][35m SELECT column_name, column_default, is_nullable = 'YES', data_type, character_maximum_length, column_type, column_key, extra, column_comment, numeric_precision, numeric_scale , datetime_precision FROM information_schema.columns WHERE table_schema = 'db66011212001' AND table_name = 'device' ORDER BY ORDINAL_POSITION[0m
+
+2026/09/23 12:05:38 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[212.937ms] [33m[rows:-][35m SELECT count(*) FROM INFORMATION_SCHEMA.table_constraints WHERE constraint_schema = 'db66011212001' AND table_name = 'device' AND constraint_name = 'fk_coop_devices'[0m
+
+2026/09/23 12:05:38 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[209.184ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:39 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[223.892ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:39 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[209.633ms] [33m[rows:-][35m SELECT count(*) FROM information_schema.statistics WHERE table_schema = 'db66011212001' AND table_name = 'device' AND index_name = 'idx_device_coop_id'[0m
+
+2026/09/23 12:05:39 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[206.237ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:40 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[214.310ms] [33m[rows:1][35m SELECT SCHEMA_NAME from Information_schema.SCHEMATA where SCHEMA_NAME LIKE 'db66011212001%' ORDER BY SCHEMA_NAME='db66011212001' DESC,SCHEMA_NAME limit 1[0m
+
+2026/09/23 12:05:42 [32mD:/EZ-SmartFarm_BackN/database/migration.go:19 [33mSLOW SQL >= 200ms
+[0m[31;1m[208.319ms] [33m[rows:-][35m SELECT count(*) FROM INFORMATION_SCHEMA.table_constraints WHERE constraint_schema = 'db66011212001' AND table_name = 'egg' AND constraint_name = 'fk_coop_eggs'[0m
+
+2026/09/23 12:05:42 [31;1mD:/EZ-SmartFarm_BackN/database/migration.go:19 [35;1mError 3780 (HY000): Referencing column 'coop_id' and referenced column 'coop_id' in foreign key constraint 'fk_coop_eggs' are incompatible.
+[0m[33m[47.941ms] [34;1m[rows:0][0m ALTER TABLE `egg` ADD CONSTRAINT `fk_coop_eggs` FOREIGN KEY (`coop_id`) REFERENCES `coop`(`coop_id`)
+2026/09/23 12:05:42 Warning: AutoMigrate did not fully complete: Error 3780 (HY000): Referencing column 'coop_id' and referenced column 'coop_id' in foreign key constraint 'fk_coop_eggs' are incompatible.
+
+2026/09/23 12:05:42 [32mD:/EZ-SmartFarm_BackN/database/migration.go:140 [33mSLOW SQL >= 200ms
+[0m[31;1m[217.130ms] [33m[rows:1][35m SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'egg' AND CONSTRAINT_NAME = 'fk_name_coop_eggs'[0m
+
+2026/09/23 12:05:43 [32mD:/EZ-SmartFarm_BackN/database/migration.go:140 [33mSLOW SQL >= 200ms
+[0m[31;1m[212.415ms] [33m[rows:1][35m SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'vaccine' AND CONSTRAINT_NAME = 'fk_name_coop_vaccines'[0m
+
+2026/09/23 12:05:43 [32mD:/EZ-SmartFarm_BackN/database/migration.go:180 [33mSLOW SQL >= 200ms
+[0m[31;1m[207.330ms] [33m[rows:0][35m SELECT DISTINCT INDEX_NAME FROM information_schema.STATISTICS
+		 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'device' AND COLUMN_NAME = 'name' AND NON_UNIQUE = 0 AND INDEX_NAME != 'PRIMARY'[0m
+
+2026/09/23 12:05:43 [31;1mD:/EZ-SmartFarm_BackN/database/foodstock_repository.go:96 [35;1mrecord not found
+[0m[33m[207.453ms] [34;1m[rows:0][0m SELECT * FROM `foodstock` WHERE food_type = '' OR food_type IS NULL ORDER BY `foodstock`.`food_id` LIMIT 1
+
+2026/09/23 12:05:43 [32mD:/EZ-SmartFarm_BackN/database/foodstock_repository.go:100 [33mSLOW SQL >= 200ms
+[0m[31;1m[219.104ms] [33m[rows:1][35m SELECT count(*) FROM `foodstock` WHERE food_type = 'เม็ดใหญ่'[0m
+✓ All tables migrated successfully
+2026/09/23 12:05:43 ✅ [Cron] Scheduler started.
+Server starting on port 8080...
+
+2026/09/23 12:05:44 [32mD:/EZ-SmartFarm_BackN/database/farm_layout_repository.go:16 [33mSLOW SQL >= 200ms
+[0m[31;1m[205.600ms] [33m[rows:1][35m SELECT * FROM `farm_layout` WHERE id = 1 ORDER BY `farm_layout`.`id` LIMIT 1[0m
+
+2026/09/23 12:05:45 [32mD:/EZ-SmartFarm_BackN/database/farm_layout_repository.go:45 [33mSLOW SQL >= 200ms
+[0m[31;1m[277.581ms] [33m[rows:1][35m UPDATE `farm_layout` SET `shape`='square' WHERE `id` = 1[0m
+2026/09/23 12:05:45 ✓ Farm layout shape set to square
+2026/09/23 12:05:45 [PUT] /api/farm-layout - 200 ✓ Farm layout shape set to square
+
+2026/09/23 12:05:51 [32mD:/EZ-SmartFarm_BackN/database/farm_layout_repository.go:45 [33mSLOW SQL >= 200ms
+[0m[31;1m[283.297ms] [33m[rows:1][35m UPDATE `farm_layout` SET `shape`='circle' WHERE `id` = 1[0m
+2026/09/23 12:05:51 ✓ Farm layout shape set to circle
+2026/09/23 12:05:51 [PUT] /api/farm-layout - 200 ✓ Farm layout shape set to circle
+❌ [MQTT Connection Error] network Error : dial tcp 192.168.0.102:1883: connectex: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+
+2026/09/23 12:07:20 [32mD:/EZ-SmartFarm_BackN/database/farm_layout_repository.go:45 [33mSLOW SQL >= 200ms
+[0m[31;1m[396.270ms] [33m[rows:0][35m UPDATE `farm_layout` SET `shape`='circle' WHERE `id` = 1[0m
+
+2026/09/23 12:07:20 [32mD:/EZ-SmartFarm_BackN/database/farm_layout_repository.go:45 [33mSLOW SQL >= 200ms
+[0m[31;1m[277.083ms] [33m[rows:0][35m INSERT INTO `farm_layout` (`shape`,`id`) VALUES ('circle',1) ON DUPLICATE KEY UPDATE `shape`=VALUES(`shape`)[0m
+2026/09/23 12:07:20 ✓ Farm layout shape set to circle
+2026/09/23 12:07:20 [PUT] /api/farm-layout - 200 ✓ Farm layout shape set to circle
+
+2026/09/23 12:07:21 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:126 [33mSLOW SQL >= 200ms
+[0m[31;1m[208.346ms] [33m[rows:1][35m UPDATE `coop` SET `pos_x`=44.230769230769226,`pos_y`=24.423076923076923 WHERE coop_id = 47[0m
+
+2026/09/23 12:07:21 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:126 [33mSLOW SQL >= 200ms
+[0m[31;1m[204.561ms] [33m[rows:0][35m UPDATE `coop` SET `pos_x`=NULL,`pos_y`=NULL WHERE coop_id = 48[0m
+2026/09/23 12:07:21 [PUT] /api/coops/positions - 200 ✓ Saved positions for 3 coops
+
+2026/09/23 12:07:21 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[403.689ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:07:23 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[216.697ms] [33m[rows:2][35m SELECT * FROM `device` WHERE `device`.`coop_id` IN (47,48,49)[0m
+
+2026/09/23 12:07:23 [32mD:/EZ-SmartFarm_BackN/database/foodstock_repository.go:33 [33mSLOW SQL >= 200ms
+[0m[31;1m[419.859ms] [33m[rows:2][35m SELECT * FROM `foodstock`[0m
+2026/09/23 12:07:23 [GET] /api/foods - 200 ✓ Retrieved 2 foodstocks
+
+2026/09/23 12:07:23 [32mD:/EZ-SmartFarm_BackN/database/health_repository.go:82 [33mSLOW SQL >= 200ms
+[0m[31;1m[426.658ms] [33m[rows:0][35m SELECT * FROM `health` ORDER BY date DESC[0m
+
+2026/09/23 12:07:24 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[206.203ms] [33m[rows:2][35m SELECT * FROM `device` WHERE `device`.`coop_id` IN (47,48,49)[0m
+
+2026/09/23 12:07:24 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[691.529ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:07:24 [GET] /api/coops - 200 ✓ Retrieved 3 coops
+
+2026/09/23 12:07:24 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[212.014ms] [33m[rows:0][35m SELECT * FROM `egg` WHERE `egg`.`coop_id` IN (47,48,49)[0m
+
+2026/09/23 12:07:24 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[1117.262ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+
+2026/09/23 12:07:24 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[207.268ms] [33m[rows:0][35m SELECT * FROM `egg` WHERE `egg`.`coop_id` IN (47,48,49)[0m
+
+2026/09/23 12:07:24 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[209.470ms] [33m[rows:0][35m SELECT * FROM `health` WHERE `health`.`coop_id` IN (47,48,49)[0m
+2026/09/23 12:07:24 [GET] /api/vaccines/alerts - 200 ✓ Retrieved 1 calendar alerts
+
+2026/09/23 12:07:24 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[718.803ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:07:24 [GET] /api/coops - 200 ✓ Retrieved 3 coops
+
+2026/09/23 12:15:55 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[598.634ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:24:59 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[240.170ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:25:45 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[228.294ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:26:11 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[330.560ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:26:37 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[455.003ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:27:54 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[474.788ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:28:51 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[346.378ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:31:41 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[203.778ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:32:17 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[241.108ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:33:34 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[493.400ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:40:25 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[344.741ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+[mysql] 2026/09/23 12:41:10 packets.go:37: read tcp 172.28.236.35:65145->202.28.34.210:3309: wsarecv: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+
+2026/09/23 12:41:10 [31;1mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [35;1minvalid connection
+[0m[33m[24721.702ms] [34;1m[rows:0][0m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND
+[mysql] 2026/09/23 12:41:22 packets.go:37: read tcp 172.28.236.35:65147->202.28.34.210:3309: wsarecv: An established connection was aborted by the software in your host machine.
+
+2026/09/23 12:41:22 [31;1mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [35;1minvalid connection
+[0m[33m[6597.013ms] [34;1m[rows:0][0m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND
+[mysql] 2026/09/23 12:41:54 packets.go:37: read tcp 192.168.200.40:61667->202.28.34.210:3309: wsarecv: An established connection was aborted by the software in your host machine.
+
+2026/09/23 12:41:54 [31;1mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [35;1mdial tcp 202.28.34.210:3309: connectex: A socket operation was attempted to an unreachable network.
+[0m[33m[27142.858ms] [34;1m[rows:0][0m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND
+
+2026/09/23 12:41:59 [31;1mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [35;1mdial tcp 202.28.34.210:3309: connectex: A socket operation was attempted to an unreachable network.
+[0m[33m[0.000ms] [34;1m[rows:0][0m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND
+
+2026/09/23 12:42:04 [31;1mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [35;1mdial tcp 202.28.34.210:3309: connectex: A socket operation was attempted to an unreachable network.
+[0m[33m[0.000ms] [34;1m[rows:0][0m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND
+
+2026/09/23 12:42:10 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[468.380ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:44:18 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[506.303ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+[mysql] 2026/09/23 12:47:33 packets.go:37: read tcp 172.28.236.35:61713->202.28.34.210:3309: wsarecv: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+
+2026/09/23 12:47:33 [31;1mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [35;1minvalid connection
+[0m[33m[27736.083ms] [34;1m[rows:0][0m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND
+[mysql] 2026/09/23 12:48:01 packets.go:37: read tcp 192.168.200.40:64036->202.28.34.210:3309: wsarecv: An existing connection was forcibly closed by the remote host.
+
+2026/09/23 12:48:16 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[37973.393ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:48:27 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[395.180ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:48:52 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[493.623ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+2026/09/23 12:49:12 [GET] /api/foods - 200 ✓ Retrieved 2 foodstocks
+
+2026/09/23 12:49:13 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[863.785ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+
+2026/09/23 12:49:13 [32mD:/EZ-SmartFarm_BackN/database/health_repository.go:82 [33mSLOW SQL >= 200ms
+[0m[31;1m[933.586ms] [33m[rows:0][35m SELECT * FROM `health` ORDER BY date DESC[0m
+
+2026/09/23 12:49:13 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[909.999ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+2026/09/23 12:49:13 [GET] /api/vaccines/alerts - 200 ✓ Retrieved 1 calendar alerts
+
+2026/09/23 12:49:14 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[209.458ms] [33m[rows:2][35m SELECT * FROM `device` WHERE `device`.`coop_id` IN (47,48,49)[0m
+
+2026/09/23 12:49:14 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[1451.783ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:49:14 [GET] /api/coops - 200 ✓ Retrieved 3 coops
+
+2026/09/23 12:49:17 [32mD:/EZ-SmartFarm_BackN/database/farm_layout_repository.go:16 [33mSLOW SQL >= 200ms
+[0m[31;1m[395.846ms] [33m[rows:1][35m SELECT * FROM `farm_layout` WHERE id = 1 ORDER BY `farm_layout`.`id` LIMIT 1[0m
+
+2026/09/23 12:49:17 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[269.902ms] [33m[rows:2][35m SELECT * FROM `device` WHERE `device`.`coop_id` IN (47,48,49)[0m
+
+2026/09/23 12:49:17 [32mD:/EZ-SmartFarm_BackN/database/health_repository.go:82 [33mSLOW SQL >= 200ms
+[0m[31;1m[451.912ms] [33m[rows:0][35m SELECT * FROM `health` ORDER BY date DESC[0m
+
+2026/09/23 12:49:17 [32mD:/EZ-SmartFarm_BackN/database/foodstock_repository.go:33 [33mSLOW SQL >= 200ms
+[0m[31;1m[479.262ms] [33m[rows:2][35m SELECT * FROM `foodstock`[0m
+2026/09/23 12:49:17 [GET] /api/foods - 200 ✓ Retrieved 2 foodstocks
+
+2026/09/23 12:49:18 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[561.569ms] [33m[rows:2][35m SELECT * FROM `device` WHERE `device`.`coop_id` IN (47,48,49)[0m
+
+2026/09/23 12:49:18 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[614.167ms] [33m[rows:0][35m SELECT * FROM `health` WHERE `health`.`coop_id` IN (47,48,49)[0m
+
+2026/09/23 12:49:18 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[1208.612ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:49:18 [GET] /api/coops - 200 ✓ Retrieved 3 coops
+
+2026/09/23 12:49:18 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[208.779ms] [33m[rows:0][35m SELECT * FROM `health` WHERE `health`.`coop_id` IN (47,48,49)[0m
+
+2026/09/23 12:49:18 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[1448.633ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:49:18 [GET] /api/vaccines/alerts - 200 ✓ Retrieved 1 calendar alerts
+
+2026/09/23 12:49:18 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[471.658ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:49:18 [GET] /api/coops - 200 ✓ Retrieved 3 coops
+
+2026/09/23 12:49:34 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[297.984ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:49:36 [32mD:/EZ-SmartFarm_BackN/database/health_repository.go:82 [33mSLOW SQL >= 200ms
+[0m[31;1m[441.988ms] [33m[rows:0][35m SELECT * FROM `health` ORDER BY date DESC[0m
+
+2026/09/23 12:49:37 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[867.061ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+
+2026/09/23 12:49:37 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[912.133ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:49:37 [GET] /api/coops - 200 ✓ Retrieved 3 coops
+2026/09/23 12:49:37 [GET] /api/vaccines/alerts - 200 ✓ Retrieved 1 calendar alerts
+
+2026/09/23 12:49:37 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[373.378ms] [33m[rows:0][35m SELECT * FROM `egg` WHERE `egg`.`coop_id` IN (47,48,49)[0m
+
+2026/09/23 12:49:37 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[709.109ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:49:37 [GET] /api/coops - 200 ✓ Retrieved 3 coops
+
+2026/09/23 12:49:38 [32mD:/EZ-SmartFarm_BackN/database/farm_layout_repository.go:16 [33mSLOW SQL >= 200ms
+[0m[31;1m[222.784ms] [33m[rows:1][35m SELECT * FROM `farm_layout` WHERE id = 1 ORDER BY `farm_layout`.`id` LIMIT 1[0m
+
+2026/09/23 12:49:38 [32mD:/EZ-SmartFarm_BackN/database/health_repository.go:82 [33mSLOW SQL >= 200ms
+[0m[31;1m[592.730ms] [33m[rows:0][35m SELECT * FROM `health` ORDER BY date DESC[0m
+
+2026/09/23 12:49:38 [32mD:/EZ-SmartFarm_BackN/database/foodstock_repository.go:33 [33mSLOW SQL >= 200ms
+[0m[31;1m[594.257ms] [33m[rows:2][35m SELECT * FROM `foodstock`[0m
+2026/09/23 12:49:38 [GET] /api/foods - 200 ✓ Retrieved 2 foodstocks
+
+2026/09/23 12:49:38 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[789.571ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:49:38 [GET] /api/coops - 200 ✓ Retrieved 3 coops
+
+2026/09/23 12:49:39 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[1016.635ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:49:39 [GET] /api/vaccines/alerts - 200 ✓ Retrieved 1 calendar alerts
+
+2026/09/23 12:49:39 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[532.807ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:49:39 [GET] /api/coops - 200 ✓ Retrieved 3 coops
+
+2026/09/23 12:51:10 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[205.105ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+2026/09/23 12:52:36 [GET] /api/foods - 200 ✓ Retrieved 2 foodstocks
+2026/09/23 12:52:37 [GET] /api/foods - 200 ✓ Retrieved 2 foodstocks
+
+2026/09/23 12:52:37 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[217.059ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:52:37 [GET] /api/coops - 200 ✓ Retrieved 3 coops
+
+2026/09/23 12:52:37 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[202.672ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:52:37 [GET] /api/coops - 200 ✓ Retrieved 3 coops
+2026/09/23 12:52:37 [GET] /api/vaccines/alerts - 200 ✓ Retrieved 1 calendar alerts
+2026/09/23 12:52:46 [GET] /api/foods - 200 ✓ Retrieved 2 foodstocks
+
+2026/09/23 12:52:46 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[210.411ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:52:46 [GET] /api/coops - 200 ✓ Retrieved 3 coops
+
+2026/09/23 12:52:46 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[213.867ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:52:46 [GET] /api/vaccines/alerts - 200 ✓ Retrieved 1 calendar alerts
+2026/09/23 12:52:54 [GET] /api/foods - 200 ✓ Retrieved 2 foodstocks
+2026/09/23 12:52:54 [GET] /api/food_history - 200 ✓ Retrieved 2 food history records
+2026/09/23 12:52:54 [GET] /api/foods - 200 ✓ Retrieved 2 foodstocks
+2026/09/23 12:52:54 [GET] /api/foods/distribution - 200 ✓ Retrieved 4 food distribution records
+
+2026/09/23 12:52:54 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[306.567ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:52:54 [GET] /api/foods/coop-consumption - 200 ✓ Estimated food consumption for 3 coops
+
+2026/09/23 12:52:54 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[310.687ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:52:54 [GET] /api/coops - 200 ✓ Retrieved 3 coops
+
+2026/09/23 12:52:54 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[317.004ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:52:54 [GET] /api/vaccines/alerts - 200 ✓ Retrieved 1 calendar alerts
+
+2026/09/23 12:53:26 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[262.343ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:54:11 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[257.553ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:55:57 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[593.312ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:57:03 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[348.153ms] [33m[rows:2][35m SELECT * FROM `device` WHERE `device`.`coop_id` IN (47,48,49)[0m
+
+2026/09/23 12:57:03 [32mD:/EZ-SmartFarm_BackN/database/food_distribution_repository.go:44 [33mSLOW SQL >= 200ms
+[0m[31;1m[285.962ms] [33m[rows:0][35m SELECT * FROM `coop` WHERE `coop`.`coop_id` IN (21,19,20,18)[0m
+
+2026/09/23 12:57:03 [32mD:/EZ-SmartFarm_BackN/database/food_distribution_repository.go:44 [33mSLOW SQL >= 200ms
+[0m[31;1m[571.581ms] [33m[rows:4][35m SELECT * FROM `food_distribution` ORDER BY distributed_at DESC[0m
+2026/09/23 12:57:03 [GET] /api/foods/distribution - 200 ✓ Retrieved 4 food distribution records
+
+2026/09/23 12:57:03 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[311.095ms] [33m[rows:0][35m SELECT * FROM `egg` WHERE `egg`.`coop_id` IN (47,48,49)[0m
+
+2026/09/23 12:57:04 [32mD:/EZ-SmartFarm_BackN/database/coop_repository.go:70 [33mSLOW SQL >= 200ms
+[0m[31;1m[791.566ms] [33m[rows:3][35m SELECT * FROM `coop`[0m
+2026/09/23 12:57:04 [GET] /api/foods/coop-consumption - 200 ✓ Estimated food consumption for 3 coops
+
+2026/09/23 12:59:54 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[291.814ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 12:59:59 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[269.675ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:00:05 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[320.133ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:00:43 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[13018.111ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:00:52 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[4465.571ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:01:07 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[9581.218ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:01:43 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[31048.808ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+[mysql] 2026/09/23 13:02:07 packets.go:37: read tcp 192.168.200.40:56057->202.28.34.210:3309: wsarecv: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+
+2026/09/23 13:02:07 [31;1mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [35;1minvalid connection
+[0m[33m[19202.632ms] [34;1m[rows:0][0m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND
+[mysql] 2026/09/23 13:02:31 packets.go:37: read tcp 192.168.200.40:56055->202.28.34.210:3309: wsarecv: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond.
+
+2026/09/23 13:02:31 [31;1mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [35;1minvalid connection
+[0m[33m[19208.638ms] [34;1m[rows:0][0m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND
+
+2026/09/23 13:02:37 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[1143.918ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:02:48 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[279.487ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:02:53 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[278.923ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+[mysql] 2026/09/23 13:02:58 packets.go:37: read tcp 192.168.200.40:50291->202.28.34.210:3309: wsarecv: An established connection was aborted by the software in your host machine.
+
+2026/09/23 13:02:58 [31;1mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [35;1minvalid connection
+[0m[33m[413.033ms] [34;1m[rows:0][0m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND
+
+2026/09/23 13:03:04 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[218.867ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:06:01 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[600.717ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:07:27 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[348.410ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:07:48 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[342.407ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:09:09 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[320.999ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:09:35 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[293.398ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:11:01 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[347.095ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:12:27 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[353.782ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:12:43 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[371.639ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:15:45 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[211.425ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:17:07 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[437.309ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:17:38 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[316.302ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:18:08 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[317.128ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:18:49 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[217.711ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:19:26 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[459.930ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:20:21 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[207.327ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:20:58 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[437.111ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:25:21 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[325.293ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:27:02 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[347.626ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:27:18 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[358.985ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:27:28 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[428.777ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+[mysql] 2026/09/23 13:27:34 packets.go:37: read tcp 172.28.236.35:61818->202.28.34.210:3309: wsarecv: An existing connection was forcibly closed by the remote host.
+
+2026/09/23 13:27:34 [31;1mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [35;1minvalid connection
+[0m[33m[731.445ms] [34;1m[rows:0][0m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND
+
+2026/09/23 13:27:42 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[3208.127ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:28:13 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[277.996ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:29:14 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[211.051ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:29:44 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[450.671ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:29:55 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[646.892ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:30:16 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[310.750ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:31:27 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[325.994ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:33:24 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[1026.155ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:35:50 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[326.006ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+[mysql] 2026/09/23 13:37:32 packets.go:37: read tcp 172.28.236.35:62102->202.28.34.210:3309: wsarecv: An established connection was aborted by the software in your host machine.
+
+2026/09/23 13:37:32 [31;1mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [35;1minvalid connection
+[0m[33m[11322.867ms] [34;1m[rows:0][0m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND
+
+2026/09/23 13:37:38 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[380.544ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:37:53 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[355.193ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:38:39 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[395.832ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:38:49 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[316.448ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:39:55 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[307.637ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:40:40 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[270.569ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:41:26 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[306.447ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:42:16 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[276.873ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:44:02 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[285.416ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:45:43 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[338.893ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:48:39 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[287.394ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:49:45 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[278.277ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:51:41 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[300.250ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:52:11 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[281.745ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:52:47 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[285.752ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:53:53 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[291.981ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:56:59 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[291.924ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:57:30 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[600.210ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 13:59:11 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[291.629ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:01:02 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[281.246ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:07:34 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[605.892ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:17:08 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[628.686ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:19:49 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[270.624ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:22:16 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[276.616ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:23:21 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[265.238ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:23:36 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[289.430ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:23:42 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[603.174ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:27:09 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[315.568ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:30:50 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[316.589ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:36:12 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[274.691ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:40:37 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[274.188ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:42:28 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[303.953ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:43:34 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[600.441ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:44:10 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[269.293ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:50:48 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[314.259ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:51:28 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[276.066ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:54:14 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[292.979ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:55:15 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[289.388ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m
+
+2026/09/23 14:56:00 [32mD:/EZ-SmartFarm_BackN/services/mqtt_service.go:95 [33mSLOW SQL >= 200ms
+[0m[31;1m[272.627ms] [33m[rows:0][35m UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND[0m

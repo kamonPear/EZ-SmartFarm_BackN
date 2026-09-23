@@ -47,7 +47,7 @@ func UpdateFarmLayoutHandler(w http.ResponseWriter, r *http.Request) {
 
 	if !models.IsValidFarmShape(req.Shape) {
 		log.Printf("[%s] %s - %d (Invalid shape: %q)", r.Method, r.RequestURI, http.StatusBadRequest, req.Shape)
-		http.Error(w, "shape must be either 'circle' or 'triangle'", http.StatusBadRequest)
+		http.Error(w, "shape must be 'circle', 'triangle', or 'square'", http.StatusBadRequest)
 		return
 	}
 

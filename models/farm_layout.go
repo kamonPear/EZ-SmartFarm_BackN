@@ -4,11 +4,12 @@ package models
 const (
 	FarmShapeCircle   = "circle"
 	FarmShapeTriangle = "triangle"
+	FarmShapeSquare   = "square"
 )
 
 // IsValidFarmShape reports whether shape is one of the known farm layout shapes
 func IsValidFarmShape(shape string) bool {
-	return shape == FarmShapeCircle || shape == FarmShapeTriangle
+	return shape == FarmShapeCircle || shape == FarmShapeTriangle || shape == FarmShapeSquare
 }
 
 // FarmLayout is a singleton row (id=1) holding the chosen farm outline shape that
