@@ -48,6 +48,8 @@ func MigrateModels(db *gorm.DB) error {
 		&models.Egg{},
 		&models.Health{},
 		&models.Vaccine{},
+		&models.HealthAppointment{},
+		&models.FarmThreshold{},
 	); err != nil {
 		// AutoMigrate can fail partway through (e.g. a pre-existing FK type mismatch on
 		// egg/vaccine.coop_id) while still having fully migrated earlier models in the list.

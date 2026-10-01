@@ -29,9 +29,8 @@ func InitDatabase(cfg config.DatabaseConfig) error {
 	// 🌟 2. เพิ่มคำสั่ง AutoMigrate ตรงนี้ เพื่อให้ GORM สร้างตารางให้อัตโนมัติ
 	// นำชื่อตารางที่คุณต้องการให้มันสร้าง/อัปเดตอัตโนมัติมาใส่ไว้ในวงเล็บ
 	err = DB.AutoMigrate(
-		&models.MedicineSchedule{}, // 👈 ตารางยาและวัคซีนใหม่ของเรา
-		&models.Coop{},             // ตารางคอกไก่
-		&models.Vaccine{},          // ตารางประวัติการฉีดวัคซีน
+		&models.Coop{},    // ตารางคอกไก่
+		&models.Vaccine{}, // ตารางประวัติการฉีดวัคซีน (รวม "ประเภทยา/วัคซีน" ไว้ในนี้ด้วยแล้ว - ดู models/vaccine.go)
 		// ถัามีโมเดลอื่นๆ ในโฟลเดอร์ models เช่น Egg, Device ก็สามารถเพิ่มต่อท้ายได้เลยครับ
 	)
 	

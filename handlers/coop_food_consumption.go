@@ -12,10 +12,12 @@ import (
 )
 
 // GetCoopFoodConsumptionHandler estimates how many kg of food each coop eats per day.
-// Each coop's food type is decided by the age of its chickens (models.FoodTypeForAgeWeeks).
-// The farm only tracks one daily deduction total per food type (see DailyDeductAmounts),
-// so a coop's estimated share is that total split proportionally by chicken headcount
-// (Amount) among every other coop currently eating the same food type.
+// Each coop's food type is decided by the age of its chickens (models.FoodTypeForAgeWeeks),
+// and the estimate is a direct headcount calculation (coop.Amount x
+// FoodConsumptionKgPerBirdPerDay[foodType]) - the same formula ComputeDailyFoodConsumption
+// uses for the real automatic deduction, so what's shown here always matches what actually
+// gets deducted (no per-coop feed sensor exists, so this is still an estimate, just no
+// longer a proportional split of an artificial fixed pool).
 // GET /api/foods/coop-consumption
 func GetCoopFoodConsumptionHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -38,30 +40,9 @@ func GetCoopFoodConsumptionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	ageWeeksOf := make(map[int]int, len(coops))
-	foodTypeOf := make(map[int]string, len(coops))
-	amountByType := make(map[string]int)
-
-	for _, coop := range coops {
-		if coop.Birthday.IsZero() {
-			continue // ยังไม่ทราบอายุ ไม่รวมในการคำนวณสัดส่วน
-		}
-
-		ageWeeks := int(now.Sub(coop.Birthday).Hours() / 24 / 7)
-		if ageWeeks < 0 {
-			ageWeeks = 0
-		}
-		foodType := models.FoodTypeForAgeWeeks(ageWeeks)
-
-		ageWeeksOf[coop.CoopID] = ageWeeks
-		foodTypeOf[coop.CoopID] = foodType
-		amountByType[foodType] += coop.Amount
-	}
-
 	result := make([]models.CoopFoodConsumption, 0, len(coops))
 	for _, coop := range coops {
-		foodType, known := foodTypeOf[coop.CoopID]
-		if !known {
+		if coop.Birthday.IsZero() {
 			result = append(result, models.CoopFoodConsumption{
 				CoopID:            coop.CoopID,
 				NameCoop:          coop.NameCoop,
@@ -73,21 +54,19 @@ func GetCoopFoodConsumptionHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		dailyTotal := DailyDeductAmounts[foodType]
-		totalAmount := amountByType[foodType]
-
-		var estimated float64
-		if totalAmount > 0 {
-			estimated = dailyTotal * float64(coop.Amount) / float64(totalAmount)
+		ageWeeks := int(now.Sub(coop.Birthday).Hours() / 24 / 7)
+		if ageWeeks < 0 {
+			ageWeeks = 0
 		}
+		foodType := models.FoodTypeForAgeWeeks(ageWeeks)
 
 		result = append(result, models.CoopFoodConsumption{
 			CoopID:            coop.CoopID,
 			NameCoop:          coop.NameCoop,
 			Amount:            coop.Amount,
-			AgeWeeks:          ageWeeksOf[coop.CoopID],
+			AgeWeeks:          ageWeeks,
 			FoodType:          foodType,
-			EstimatedKgPerDay: estimated,
+			EstimatedKgPerDay: float64(coop.Amount) * FoodConsumptionKgPerBirdPerDay[foodType],
 		})
 	}
 

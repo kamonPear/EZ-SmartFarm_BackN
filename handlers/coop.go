@@ -42,6 +42,14 @@ func CreateCoopHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// เอาไก่เข้าคอกก่อนไก่เกิดไม่ได้ - กันไว้ที่ backend ด้วย ไม่ใช่แค่ฝั่งเว็บ/แอป
+	// เพราะ client ฝั่งไหนพลาดไม่เช็คมา (หรือยิง API ตรงๆ) ก็ยังโดนกันตรงนี้
+	if req.DateAdoptAnimals.Before(req.Birthday) {
+		log.Printf("[%s] %s - %d (date_adopt_animals before birthday)", r.Method, r.RequestURI, http.StatusBadRequest)
+		http.Error(w, "วันที่รับเข้าเลี้ยงต้องไม่ก่อนวันเกิดไก่", http.StatusBadRequest)
+		return
+	}
+
 	coop, err := database.CreateCoop(&req, userID)
 	if err != nil {
 		if database.IsDuplicateNameCoop(err) {
@@ -163,6 +171,14 @@ func UpdateCoopHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[%s] %s - %d (Invalid request body)", r.Method, r.RequestURI, http.StatusBadRequest)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// เอาไก่เข้าคอกก่อนไก่เกิดไม่ได้ - เช็คเฉพาะตอนส่งมาทั้งคู่ (ฟอร์มแก้ไขของทั้ง
+	// เว็บ/แอปส่งมาครบทั้งสองฟิลด์เสมอ ไม่ใช่ partial update)
+	if !req.DateAdoptAnimals.IsZero() && !req.Birthday.IsZero() && req.DateAdoptAnimals.Before(req.Birthday) {
+		log.Printf("[%s] %s - %d (date_adopt_animals before birthday)", r.Method, r.RequestURI, http.StatusBadRequest)
+		http.Error(w, "วันที่รับเข้าเลี้ยงต้องไม่ก่อนวันเกิดไก่", http.StatusBadRequest)
 		return
 	}
 

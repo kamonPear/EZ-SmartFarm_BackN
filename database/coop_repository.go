@@ -102,6 +102,24 @@ func GetAllCoops(userID int) ([]models.Coop, error) {
 	return coops, nil
 }
 
+// GetAllCoopsGroupedByUser fetches every coop in the system (every user, no Preloads -
+// only the plain coop rows are needed), grouped by owner. Used by the cron job to
+// compute each user's own real daily food consumption (headcount-based) in a single
+// query instead of one query per user.
+func GetAllCoopsGroupedByUser() (map[int][]models.Coop, error) {
+	var coops []models.Coop
+	if err := DB.Find(&coops).Error; err != nil {
+		log.Printf("Error fetching all coops: %v", err)
+		return nil, err
+	}
+
+	grouped := make(map[int][]models.Coop)
+	for _, c := range coops {
+		grouped[c.UserID] = append(grouped[c.UserID], c)
+	}
+	return grouped, nil
+}
+
 // UpdateCoop updates an existing coop, only if it's owned by userID
 func UpdateCoop(coopID int, req *models.UpdateCoopRequest, userID int) (*models.Coop, error) {
 	coop, err := GetCoopByIDForUser(coopID, userID)

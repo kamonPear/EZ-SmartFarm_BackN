@@ -48,6 +48,12 @@ func SetupRoutes(db *gorm.DB) {
 	rg.GET("/api/farm-layout", auth.RequireAuth(handlers.GetFarmLayoutHandler))
 	rg.PUT("/api/farm-layout", auth.RequireAuth(handlers.UpdateFarmLayoutHandler))
 
+	// Farm threshold (target temperature/ammonia shared across every coop) - was
+	// localStorage/SharedPreferences-only on each platform before (web and app
+	// showed different values); now backed by the DB so both stay in sync
+	rg.GET("/api/farm-threshold", auth.RequireAuth(handlers.GetFarmThresholdHandler))
+	rg.PUT("/api/farm-threshold", auth.RequireAuth(handlers.UpdateFarmThresholdHandler))
+
 	// Eggs
 	rg.POST("/api/eggs", auth.RequireAuth(handlers.CreateEggHandler))
 	rg.GET("/api/eggs", auth.RequireAuth(handleEggsGet))
@@ -96,6 +102,17 @@ func SetupRoutes(db *gorm.DB) {
 
 	rg.GET("/api/notifications/vaccines", auth.RequireAuth(handlers.GetVaccineNotificationsHandler))
 
+	// Manual health-check appointments ("นัดตรวจสุขภาพเอง") - booked ahead of time,
+	// independent of the auto vaccine-based schedule; folded into /api/calendar/markers
+	rg.POST("/api/health-appointments", auth.RequireAuth(handlers.CreateHealthAppointmentHandler))
+	rg.GET("/api/health-appointments", auth.RequireAuth(handleHealthAppointmentsGet))
+	rg.DELETE("/api/health-appointments", auth.RequireAuth(handlers.DeleteHealthAppointmentHandler))
+
+	// Unified calendar markers - single source of truth for "what's on this day"
+	// across vaccines/health/coop birthdays/manual appointments, shared by both the
+	// web app and the Flutter app so neither has to re-derive it client-side
+	rg.GET("/api/calendar/markers", auth.RequireAuth(handlers.GetCalendarMarkersHandler))
+
 	// Devices
 	rg.POST("/api/devices", auth.RequireAuth(handlers.CreateDeviceHandler))
 	rg.GET("/api/devices", auth.RequireAuth(handleDevicesGet))
@@ -136,6 +153,14 @@ func handleHealthsGet(w http.ResponseWriter, r *http.Request) {
 		handlers.GetHealthsByCoopHandler(w, r)
 	default:
 		handlers.GetAllHealthsHandler(w, r)
+	}
+}
+
+func handleHealthAppointmentsGet(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("coop_id") != "" {
+		handlers.GetHealthAppointmentsByCoopHandler(w, r)
+	} else {
+		handlers.GetAllHealthAppointmentsHandler(w, r)
 	}
 }
 

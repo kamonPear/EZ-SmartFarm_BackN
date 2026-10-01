@@ -524,23 +524,23 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		owned, err := database.CoopBelongsToUser(coopID, userID)
+		coop, err := database.GetCoopByIDForUser(coopID, userID)
 		if err != nil {
+			if errors.Is(err, database.ErrNotFound) {
+				http.Error(w, "Coop not found", http.StatusNotFound)
+				return
+			}
 			log.Printf("Failed to verify coop ownership: %v", err)
 			http.Error(w, "Failed to verify coop ownership", http.StatusInternalServerError)
-			return
-		}
-		if !owned {
-			http.Error(w, "Coop not found", http.StatusNotFound)
 			return
 		}
 		vaccineName := parts[1]
 
 		var body struct {
 			IsCompleted bool   `json:"is_completed"`
-			Method      string `json:"method"`      
-			ChickenAge  int    `json:"chicken_age"` 
-			Note        string `json:"note"`        
+			Method      string `json:"method"`
+			ChickenAge  int    `json:"chicken_age"`
+			Note        string `json:"note"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -551,15 +551,18 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 			var count int64
 			database.DB.Model(&models.Vaccine{}).Where("coop_id = ? AND name_vaccine = ?", coopID, vaccineName).Count(&count)
 			if count == 0 {
-				now := time.Now()
+				// Birthday ต้องเป็นวันเกิดไก่จริงของคอกนี้ (เหมือนที่ CreateVaccine
+				// ในวาซีนrepository ทำ) ไม่ใช่เวลาปัจจุบันตอนกดให้วัคซีน - ของเดิมใส่
+				// &now ผิด ทำให้ birthday ของประวัติวัคซีนคลาดเคลื่อนจากวันเกิดจริง
 				vaccine := models.Vaccine{
 					CoopID:         coopID,
+					NameCoop:       coop.NameCoop,
+					Birthday:       &coop.Birthday,
 					Name:           vaccineName,
 					Method:         body.Method,
 					RecommendedAge: strconv.Itoa(body.ChickenAge),
 					Note:           body.Note,
-					RecordDate:     now,
-					Birthday:       &now,
+					RecordDate:     time.Now(),
 				}
 				if err := database.DB.Create(&vaccine).Error; err != nil {
 					log.Printf("Failed to create vaccine record: %v", err)

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/database"
@@ -208,14 +209,60 @@ func GetFoodHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(history)
 }
 
-// DailyDeductAmounts คือจำนวน กก./วัน ที่ตัดออกจากสต็อกแต่ละประเภท (ค่าเดียวกับที่ Cron Job ใช้)
-var DailyDeductAmounts = map[string]float64{
-	models.FoodTypeSmallPellet: 20.0,
-	models.FoodTypeLargePellet: 30.0,
+// FoodConsumptionKgPerBirdPerDay คือกก./ตัว/วัน ที่ไก่ 1 ตัวกินอาหารแต่ละประเภท
+// (ประมาณการตามช่วงอายุ - ไก่เล็กกินน้อยกว่าไก่โต) ใช้คูณกับจำนวนไก่จริงของแต่ละ
+// คอก (coop.Amount) เพื่อคำนวณยอดตัดสต็อกจริงของผู้ใช้แต่ละคน แทนที่ค่าคงที่ตายตัว
+// แบบเดิม (DailyDeductAmounts) ที่ตัดเท่ากันทุกบัญชีไม่ว่าจะเลี้ยงไก่กี่ตัวก็ตาม
+var FoodConsumptionKgPerBirdPerDay = map[string]float64{
+	models.FoodTypeSmallPellet: 0.06, // ไก่อายุ 0-14 สัปดาห์ ~60 กรัม/ตัว/วัน
+	models.FoodTypeLargePellet: 0.13, // ไก่อายุ 14 สัปดาห์ขึ้นไป ~130 กรัม/ตัว/วัน
+}
+
+// ComputeDailyFoodConsumptionByCoop คืนยอดกก./วันของอาหารประเภท foodType แยกเป็น
+// รายคอก (เฉพาะคอกที่กำลังกินอาหารประเภทนี้อยู่จริง) - อิงจากจำนวนไก่จริงต่อคอก
+// (coop.Amount) คูณอัตรากก./ตัว/วันของช่วงอายุคอกนั้น (ตัดสินจาก Birthday ว่าอยู่
+// ช่วงเม็ดเล็ก/เม็ดใหญ่) ใช้ทั้งเป็นยอดตัดสต็อกรวม (sum ของผลลัพธ์นี้) และเป็น
+// breakdown ที่บันทึกลง food_distribution ทุกครั้งที่ตัดสต็อกอัตโนมัติ เพื่อให้หน้า
+// "สรุปผลอาหารแต่ละประเภท" ยังเห็นว่าคอกไหนกินไปเท่าไรได้ แม้ไม่มีใครกรอกเอง
+func ComputeDailyFoodConsumptionByCoop(coops []models.Coop, foodType string) []models.FoodDistributionItem {
+	now := time.Now()
+	items := make([]models.FoodDistributionItem, 0, len(coops))
+	for _, coop := range coops {
+		if coop.Birthday.IsZero() {
+			continue // ยังไม่ทราบอายุ ไม่รวมในการคำนวณ
+		}
+		ageWeeks := int(now.Sub(coop.Birthday).Hours() / 24 / 7)
+		if ageWeeks < 0 {
+			ageWeeks = 0
+		}
+		if models.FoodTypeForAgeWeeks(ageWeeks) != foodType {
+			continue
+		}
+		kg := float64(coop.Amount) * FoodConsumptionKgPerBirdPerDay[foodType]
+		if kg <= 0 {
+			continue
+		}
+		items = append(items, models.FoodDistributionItem{CoopID: coop.CoopID, KgGiven: kg})
+	}
+	return items
+}
+
+// ComputeDailyFoodConsumption รวมยอดกก./วัน ของอาหารประเภท foodType ที่คอกทั้งหมด
+// ที่ส่งมา (ของผู้ใช้คนเดียว) กินจริง - ผลรวมของ ComputeDailyFoodConsumptionByCoop
+// ใช้ร่วมกันทั้งตัวตัดสต็อกแมนนวล (ForceDeductStockHandler), Cron ตัดสต็อกประจำวัน
+// (scheduler.SetupJobs) และตัวประมาณการต่อคอกที่โชว์ในหน้าคลังอาหาร (GetCoopFoodConsumptionHandler)
+// เพื่อให้ตัวเลขตรงกันทุกจุด
+func ComputeDailyFoodConsumption(coops []models.Coop, foodType string) float64 {
+	var total float64
+	for _, item := range ComputeDailyFoodConsumptionByCoop(coops, foodType) {
+		total += item.KgGiven
+	}
+	return total
 }
 
 // ForceDeductStockHandler อนุญาตให้เรียก API เพื่อตัดสต็อกแบบแมนนวล ต้องระบุประเภทอาหารก่อนตัดเสมอ
-// ตัดเฉพาะสต็อกของผู้เรียก (userID) เท่านั้น
+// ยอดที่ตัดคำนวณจากจำนวนไก่จริงในคอกของผู้เรียก (userID) ที่กำลังกินอาหารประเภทนี้อยู่
+// (เหมือนกับยอดที่ Cron ตัดให้อัตโนมัติทุกเที่ยงคืน) ไม่ใช่ค่าคงที่ตายตัวอีกต่อไป
 // POST /api/foodstocks/force-deduct  body: {"food_type": "เม็ดเล็ก"}
 func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -243,7 +290,29 @@ func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	amount := DailyDeductAmounts[req.FoodType]
+	coops, err := database.GetAllCoops(userID)
+	if err != nil {
+		log.Printf("[%s] %s - %d (Failed to fetch coops: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
+		http.Error(w, "Failed to fetch coops", http.StatusInternalServerError)
+		return
+	}
+
+	items := ComputeDailyFoodConsumptionByCoop(coops, req.FoodType)
+	var amount float64
+	for _, item := range items {
+		amount += item.KgGiven
+	}
+	if amount <= 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		log.Printf("[%s] %s - %d ✓ ไม่มีคอกที่กินอาหาร %s อยู่ ไม่มีอะไรให้ตัด", r.Method, r.RequestURI, http.StatusOK, req.FoodType)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"message":   fmt.Sprintf("ไม่มีคอกที่กำลังกินอาหาร%sอยู่ ไม่มีอะไรให้ตัดสต็อก", req.FoodType),
+			"food_type": req.FoodType,
+			"deducted":  0,
+		})
+		return
+	}
 
 	if err := database.DeductFoodstockByType(req.FoodType, userID, amount); err != nil {
 		log.Printf("[%s] %s - %d (Failed to deduct stock: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
@@ -251,11 +320,18 @@ func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// บันทึก breakdown รายคอกไว้ด้วย (เหมือนตอนกรอกเองสมัยก่อน) ให้หน้า "สรุปผล
+	// อาหารแต่ละประเภท" ยังเห็นว่าคอกไหนกินไปเท่าไรได้ แม้ตัดสต็อกแบบไม่กรอกเอง -
+	// สต็อกถูกตัดสำเร็จไปแล้วข้างบน พลาดตรงนี้แค่ log ไว้ ไม่ทำให้ทั้งคำขอ fail
+	if _, err := database.CreateFoodDistributionBatch(req.FoodType, items, userID); err != nil {
+		log.Printf("[%s] %s - (บันทึก breakdown รายคอกไม่สำเร็จ แต่ตัดสต็อกไปแล้ว: %v)", r.Method, r.RequestURI, err)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	log.Printf("[%s] %s - %d ✓ ตัดสต็อก %s %.0f กก. เรียบร้อยแล้ว", r.Method, r.RequestURI, http.StatusOK, req.FoodType, amount)
+	log.Printf("[%s] %s - %d ✓ ตัดสต็อก %s %.2f กก. เรียบร้อยแล้ว", r.Method, r.RequestURI, http.StatusOK, req.FoodType, amount)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message":   fmt.Sprintf("หักสต็อกอาหาร%s %.0f กิโลกรัม สำเร็จ", req.FoodType, amount),
+		"message":   fmt.Sprintf("หักสต็อกอาหาร%s %.2f กิโลกรัม สำเร็จ", req.FoodType, amount),
 		"food_type": req.FoodType,
 		"deducted":  amount,
 	})

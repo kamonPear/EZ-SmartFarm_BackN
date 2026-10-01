@@ -174,32 +174,3 @@ func DeductFoodstockByType(foodType string, userID int, amount float64) error {
 	return nil
 }
 
-// DeductFoodstockByTypeAllUsers applies the fixed daily automatic deduction to every
-// user's stock row for foodType. Used only by the cron scheduler (scheduler.SetupJobs),
-// which runs on a timer with no authenticated caller/user in context - unlike
-// DeductFoodstockByType (used by the per-user HTTP handlers), it isn't scoped to a
-// single user because it represents farm-wide daily consumption applying equally to
-// every account's own stock.
-func DeductFoodstockByTypeAllUsers(foodType string, amount float64) error {
-	var rows []models.Foodstock
-	if err := DB.Where("food_type = ?", foodType).Find(&rows).Error; err != nil {
-		return fmt.Errorf("ดึงข้อมูลสต็อกล้มเหลว: %v", err)
-	}
-
-	for i := range rows {
-		if rows[i].QuantityCurrent <= 0 {
-			continue
-		}
-		rows[i].QuantityCurrent -= amount
-		if rows[i].QuantityCurrent < 0 {
-			rows[i].QuantityCurrent = 0
-		}
-		rows[i].DateUp = time.Now()
-		if err := DB.Save(&rows[i]).Error; err != nil {
-			return fmt.Errorf("อัปเดตสต็อกล้มเหลว: %v", err)
-		}
-	}
-
-	log.Printf("✓ ตัดสต็อก %s %.2f kg ให้ทุกผู้ใช้ (%d ราย) เรียบร้อยแล้ว\n", foodType, amount, len(rows))
-	return nil
-}
