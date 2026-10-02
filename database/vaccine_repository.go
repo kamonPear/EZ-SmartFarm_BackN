@@ -3,7 +3,6 @@ package database
 import (
 	"fmt"
 	"log"
-	"time"
 
 	"EZ-SmartFarm_BachN/models"
 
@@ -15,12 +14,14 @@ import (
 // name_coop/birthday can be copied onto the vaccine row to satisfy the
 // fk_name_coop_vaccines constraint.
 func CreateVaccine(req *models.CreateVaccineRequest, coop *models.Coop) (*models.Vaccine, error) {
+	coopID := req.CoopID
+	recordDate := req.RecordDate
 	vaccine := models.Vaccine{
-		CoopID:         req.CoopID,
+		CoopID:         &coopID,
 		NameCoop:       coop.NameCoop,
 		Birthday:       &coop.Birthday,
 		Name:           req.Name,
-		RecordDate:     req.RecordDate,
+		RecordDate:     &recordDate,
 		Method:         req.Method,
 		RecommendedAge: req.RecommendedAge,
 		Note:           req.Note,
@@ -107,7 +108,8 @@ func UpdateVaccine(id int, req *models.UpdateVaccineRequest, userID int) (*model
 		vaccine.RecommendedAge = req.RecommendedAge
 	}
 	if !req.RecordDate.IsZero() {
-		vaccine.RecordDate = req.RecordDate
+		recordDate := req.RecordDate
+		vaccine.RecordDate = &recordDate
 	}
 	if req.Note != "" {
 		vaccine.Note = req.Note
@@ -162,75 +164,3 @@ func DeleteVaccinesByCoopIDForUser(coopID int, userID int) error {
 	return DeleteVaccinesByCoopID(coopID)
 }
 
-// ==========================================
-// 🌟 ส่วนระบบแจ้งเตือน 🌟
-// ==========================================
-
-// PendingVaccineAlert โครงสร้างสำหรับส่งแจ้งเตือนไปให้ Flutter
-type PendingVaccineAlert struct {
-	Title string `json:"title"`
-	Date  string `json:"date"`
-	Time  string `json:"time"`
-}
-
-// GetPendingVaccinesAlerts ฟังก์ชันคำนวณวัคซีนที่ถึงกำหนด เฉพาะคอกของ userID
-func GetPendingVaccinesAlerts(userID int) ([]PendingVaccineAlert, error) {
-	var coops []models.Coop
-	var schedules []models.MedicineSchedule
-	var alerts []PendingVaccineAlert
-
-	// 1. ดึงข้อมูลคอกไก่ทั้งหมดของ userID
-	if err := DB.Where("user_id = ?", userID).Find(&coops).Error; err != nil {
-		return nil, err
-	}
-
-	// 2. ดึงตารางเกณฑ์วัคซีนทั้งหมด
-	if err := DB.Find(&schedules).Error; err != nil {
-		return nil, err
-	}
-
-	// 3. เตรียมเวลาปัจจุบัน
-	now := time.Now()
-	todayDate := now.Format("02/01/") + fmt.Sprintf("%d", now.Year()+543)
-	timeNow := now.Format("15:04")
-
-	// 4. เทียบอายุไก่กับเกณฑ์
-	for _, coop := range coops {
-		// ✅ เช็คว่ามีการระบุ วันเกิด และ วันที่นำเข้าเลี้ยง (DateAdoptAnimals)
-		if !coop.Birthday.IsZero() && !coop.DateAdoptAnimals.IsZero() {
-
-			// 🛑 ถ้าปัจจุบันยังไม่ถึงวันที่นำไก่เข้าเลี้ยง -> ยังไม่ต้องเริ่มให้วัคซีน ข้ามไปเลย
-			if now.Before(coop.DateAdoptAnimals) {
-				continue
-			}
-
-			// คำนวณอายุไก่ปัจจุบัน (เทียบจากวันเกิด)
-			ageInDays := models.CalculateChickenAge(coop.Birthday)
-
-			// คำนวณอายุไก่ "ณ วันที่ถูกนำเข้าเลี้ยง" (ระยะห่างระหว่างวันเกิดถึง DateAdoptAnimals)
-			ageAtImport := int(coop.DateAdoptAnimals.Sub(coop.Birthday).Hours() / 24)
-
-			for _, schedule := range schedules {
-				// 🛑 เช็คว่าวัคซีนตัวนี้ เลยกำหนดไปหรือยังตั้งแต่ก่อนไก่เข้าเลี้ยง
-				// ตัวอย่าง: ไก่เข้าวันที่ 12 (ageAtImport=12) แต่วัคซีนให้ตอนอายุไม่เกิน 7 วัน (MaxAgeDays=7) -> ข้าม
-				if schedule.MaxAgeDays < ageAtImport {
-					continue
-				}
-
-				// ✅ ถ้าอายุไก่ปัจจุบันอยู่ในช่วงที่ต้องให้วัคซีน
-				if ageInDays >= schedule.MinAgeDays && ageInDays <= schedule.MaxAgeDays {
-
-					alertTitle := fmt.Sprintf("⚠️ ถึงกำหนดให้ %s ที่คอก %d (อายุ %d วัน)", schedule.Name, coop.CoopID, ageInDays)
-
-					alerts = append(alerts, PendingVaccineAlert{
-						Title: alertTitle,
-						Date:  todayDate,
-						Time:  timeNow,
-					})
-				}
-			}
-		}
-	}
-
-	return alerts, nil
-}

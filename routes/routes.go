@@ -87,6 +87,7 @@ func SetupRoutes(db *gorm.DB) {
 	// NOTE: register the more specific /api/vaccines/* paths too - Go's
 	// ServeMux matches the most specific pattern, so ordering here doesn't matter.
 	rg.GET("/api/vaccines/recommended", auth.RequireAuth(handlers.GetRecommendedVaccinesHandler))
+	rg.GET("/api/vaccines/schedule/matching-coops", auth.RequireAuth(handlers.GetVaccineMatchingCoopsHandler))
 	rg.POST("/api/vaccines/schedule", auth.RequireAuth(handlers.AddCustomMedicineHandler))
 	rg.GET("/api/vaccines/schedule", auth.RequireAuth(handlers.GetMedicineSchedulesHandler))
 	rg.PUT("/api/vaccines/schedule/update", auth.RequireAuth(handlers.UpdateCustomMedicineHandler))

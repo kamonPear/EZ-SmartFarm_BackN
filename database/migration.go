@@ -75,6 +75,15 @@ func MigrateModels(db *gorm.DB) error {
 	ensureForeignKey(db, "egg", "fk_coop_eggs", "ALTER TABLE `egg` ADD CONSTRAINT `fk_coop_eggs` FOREIGN KEY (`coop_id`) REFERENCES `coop`(`coop_id`) ON DELETE CASCADE")
 	ensureForeignKey(db, "vaccine", "fk_coop_vaccines", "ALTER TABLE `vaccine` ADD CONSTRAINT `fk_coop_vaccines` FOREIGN KEY (`coop_id`) REFERENCES `coop`(`coop_id`) ON DELETE CASCADE")
 
+	// medicine_schedules (ตาราง "ประเภท" ยา/วัคซีน แยกต่างหาก) ถูกรวมเข้า vaccine
+	// เองแล้ว (แถวที่ coop_id IS NULL = เป็นแค่ประเภท ยังไม่ผูกคอกไหน - ดู
+	// models/vaccine.go) คอลัมน์พวกนี้เดิมบังคับ NOT NULL เพราะตารางนี้เคยใช้เก็บ
+	// แค่ "ประวัติให้จริง" อย่างเดียว ต้องผ่อนให้เป็น NULL ได้ ไม่งั้น insert แถว
+	// ประเภทไม่ผ่าน (FK บน coop_id ก็ยังทำงานปกติกับค่า NULL อยู่แล้ว ไม่ต้องแตะ)
+	ensureColumnNullable(db, "vaccine", "coop_id", "INT")
+	ensureColumnNullable(db, "vaccine", "record_date", "DATE")
+	ensureColumnNullable(db, "vaccine", "recommended_age", "VARCHAR(20)")
+
 	// The name_coop FKs below turned out to be unreliable: app code never actually populates
 	// name_coop on child rows (it's always left as ""), and multiple coops can have a blank
 	// name too, so unrelated rows across different coops end up referencing the same empty
@@ -316,6 +325,27 @@ func ensureColumnIsInt(db *gorm.DB, table, column string, nullable bool) {
 	}
 	if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` INT %s", table, column, nullClause)).Error; err != nil {
 		log.Printf("Warning: could not narrow column %s.%s to INT: %v", table, column, err)
+	}
+}
+
+// ensureColumnNullable relaxes column on table from NOT NULL to NULL if it isn't
+// already nullable. columnDef is the column's type (e.g. "INT", "DATE",
+// "VARCHAR(20)") since MODIFY COLUMN requires restating the full definition.
+// A no-op once the column already allows NULL.
+func ensureColumnNullable(db *gorm.DB, table, column, columnDef string) {
+	var isNullable string
+	if err := db.Raw(
+		"SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+		table, column,
+	).Scan(&isNullable).Error; err != nil {
+		log.Printf("Warning: could not check nullability of %s.%s: %v", table, column, err)
+		return
+	}
+	if isNullable == "" || isNullable == "YES" {
+		return
+	}
+	if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` %s NULL", table, column, columnDef)).Error; err != nil {
+		log.Printf("Warning: could not make %s.%s nullable: %v", table, column, err)
 	}
 }
 

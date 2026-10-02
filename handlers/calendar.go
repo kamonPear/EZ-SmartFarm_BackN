@@ -112,8 +112,8 @@ func GetCalendarMarkersHandler(w http.ResponseWriter, r *http.Request) {
 
 	// ----- วัคซีน (คำนวณแบบเดียวกับ GetVaccineCalendarAlertsHandler ทุกประการ -
 	// ต่างแค่ตรงนี้คำนวณ is_overdue จริงๆ แทนที่จะ hardcode false) -----
-	var schedules []models.MedicineSchedule
-	if err := database.DB.Find(&schedules).Error; err != nil {
+	var schedules []models.Vaccine
+	if err := database.DB.Where("coop_id IS NULL").Find(&schedules).Error; err != nil {
 		log.Printf("[%s] %s - %d (Failed to retrieve schedules: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to retrieve schedules", http.StatusInternalServerError)
 		return
@@ -139,11 +139,14 @@ func GetCalendarMarkersHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, schedule := range schedules {
-			windowEnd := coop.Birthday.AddDate(0, 0, schedule.MaxAgeDays)
+			if schedule.MinAgeDays == nil || schedule.MaxAgeDays == nil {
+				continue
+			}
+			windowEnd := coop.Birthday.AddDate(0, 0, *schedule.MaxAgeDays)
 			if windowEnd.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
 				continue
 			}
-			dueDate := coop.Birthday.AddDate(0, 0, schedule.MinAgeDays)
+			dueDate := coop.Birthday.AddDate(0, 0, *schedule.MinAgeDays)
 			if dueDate.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
 				dueDate = coop.DateAdoptAnimals
 			}
