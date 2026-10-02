@@ -296,26 +296,18 @@ type scheduleView struct {
 }
 
 func vaccineToScheduleView(v models.Vaccine) scheduleView {
-	minAge, maxAge := 0, 0
-	if v.MinAgeDays != nil {
-		minAge = *v.MinAgeDays
-	}
-	if v.MaxAgeDays != nil {
-		maxAge = *v.MaxAgeDays
-	}
 	return scheduleView{
 		ID:          v.VaccineID,
 		Name:        v.Name,
 		Method:      v.Method,
-		MinAgeDays:  minAge,
-		MaxAgeDays:  maxAge,
+		MinAgeDays:  v.MinAgeDays,
+		MaxAgeDays:  v.MaxAgeDays,
 		Description: v.Note,
 	}
 }
 
 // AddCustomMedicineHandler รับข้อมูล POST จากแอป Flutter มาบันทึกลงฐานข้อมูล - บันทึก
-// เป็นแถว "ประเภท" ในตาราง vaccine เอง (coop_id เป็น NULL) ไม่ใช่ตาราง
-// medicine_schedules แยกต่างหากอีกต่อไป (รวมเข้าตารางเดียวตามที่ผู้ใช้ขอ)
+// เป็นแถวใหม่ในตาราง vaccine (เก็บแค่ "ประเภท" ยา/วัคซีนเท่านั้น ไม่ปนกับประวัติให้จริง)
 // POST /api/vaccines/schedule
 func AddCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -331,11 +323,10 @@ func AddCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 🛑 กันชื่อยา/วัคซีนซ้ำ (ไม่สนตัวพิมพ์เล็ก-ใหญ่) - เช็คเฉพาะแถว "ประเภท"
-	// (coop_id IS NULL) ไม่ปนกับประวัติการให้จริงของคอกต่างๆ
+	// 🛑 กันชื่อยา/วัคซีนซ้ำ (ไม่สนตัวพิมพ์เล็ก-ใหญ่)
 	var existingCount int64
 	if err := database.DB.Model(&models.Vaccine{}).
-		Where("coop_id IS NULL AND LOWER(name_vaccine) = LOWER(?)", req.Name).
+		Where("LOWER(name_vaccine) = LOWER(?)", req.Name).
 		Count(&existingCount).Error; err != nil {
 		log.Printf("Failed to check duplicate medicine name: %v", err)
 		http.Error(w, "Failed to save medicine", http.StatusInternalServerError)
@@ -349,13 +340,12 @@ func AddCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	minAge, maxAge := req.MinAgeDays, req.MaxAgeDays
 	vaccine := models.Vaccine{
 		Name:       req.Name,
 		Method:     req.Method,
 		Note:       req.Description,
-		MinAgeDays: &minAge,
-		MaxAgeDays: &maxAge,
+		MinAgeDays: req.MinAgeDays,
+		MaxAgeDays: req.MaxAgeDays,
 	}
 	if err := database.DB.Create(&vaccine).Error; err != nil {
 		log.Printf("Failed to save medicine: %v", err)
@@ -371,7 +361,6 @@ func AddCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetMedicineSchedulesHandler คืนรายการ "ประเภท" ยา/วัคซีนทั้งหมดที่มีอยู่ในระบบ
-// (แถวในตาราง vaccine ที่ coop_id เป็น NULL)
 // GET /api/vaccines/schedule
 func GetMedicineSchedulesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -382,7 +371,7 @@ func GetMedicineSchedulesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var rows []models.Vaccine
-	if err := database.DB.Where("coop_id IS NULL").Order("name_vaccine asc").Find(&rows).Error; err != nil {
+	if err := database.DB.Order("name_vaccine asc").Find(&rows).Error; err != nil {
 		log.Printf("Failed to fetch medicine schedules: %v", err)
 		http.Error(w, "Failed to fetch medicine schedules", http.StatusInternalServerError)
 		return
@@ -448,7 +437,7 @@ func GetRecommendedVaccinesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = database.DB.Where("coop_id IS NULL AND min_age_days <= ? AND max_age_days >= ?", ageInDays, ageInDays).Find(&recommendedRows).Error
+		err = database.DB.Where("min_age_days <= ? AND max_age_days >= ?", ageInDays, ageInDays).Find(&recommendedRows).Error
 		if err != nil {
 			log.Printf("Failed to fetch medicines: %v", err)
 			http.Error(w, "Failed to fetch medicines", http.StatusInternalServerError)
@@ -471,7 +460,7 @@ func GetRecommendedVaccinesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var allRows []models.Vaccine
-	if err := database.DB.Where("coop_id IS NULL").Find(&allRows).Error; err != nil {
+	if err := database.DB.Find(&allRows).Error; err != nil {
 		log.Printf("Failed to fetch all schedules: %v", err)
 		http.Error(w, "Failed to fetch all schedules", http.StatusInternalServerError)
 		return
@@ -532,14 +521,9 @@ func GetVaccineMatchingCoopsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var schedule models.Vaccine
-	if err := database.DB.Where("coop_id IS NULL AND vaccine_id = ?", scheduleID).First(&schedule).Error; err != nil {
+	if err := database.DB.Where("vaccine_id = ?", scheduleID).First(&schedule).Error; err != nil {
 		log.Printf("[%s] %s - %d (Vaccine schedule not found: %v)", r.Method, r.RequestURI, http.StatusNotFound, err)
 		http.Error(w, "Vaccine schedule not found", http.StatusNotFound)
-		return
-	}
-	if schedule.MinAgeDays == nil || schedule.MaxAgeDays == nil {
-		log.Printf("[%s] %s - %d (Vaccine schedule missing age range)", r.Method, r.RequestURI, http.StatusInternalServerError)
-		http.Error(w, "Vaccine schedule missing age range", http.StatusInternalServerError)
 		return
 	}
 
@@ -550,11 +534,11 @@ func GetVaccineMatchingCoopsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type vaccineHistory struct {
+	type vaccineHistoryRow struct {
 		CoopID int `gorm:"column:coop_id"`
 	}
-	var histories []vaccineHistory
-	database.DB.Model(&models.Vaccine{}).Select("coop_id").
+	var histories []vaccineHistoryRow
+	database.DB.Model(&models.VaccineHistory{}).Select("coop_id").
 		Where("coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?) AND name_vaccine = ?", userID, schedule.Name).
 		Find(&histories)
 	given := make(map[int]bool, len(histories))
@@ -577,11 +561,11 @@ func GetVaccineMatchingCoopsHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		ageInDays := models.CalculateChickenAge(coop.Birthday)
-		if ageInDays < *schedule.MinAgeDays {
+		if ageInDays < schedule.MinAgeDays {
 			continue // ยังไม่ถึงอายุขั้นต่ำ
 		}
 		status := "due"
-		if ageInDays > *schedule.MaxAgeDays {
+		if ageInDays > schedule.MaxAgeDays {
 			status = "overdue"
 		}
 		name := coop.NameCoop
@@ -601,8 +585,8 @@ func GetVaccineMatchingCoopsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"vaccine_id":     schedule.VaccineID,
 		"vaccine_name":   schedule.Name,
-		"min_age_days":   *schedule.MinAgeDays,
-		"max_age_days":   *schedule.MaxAgeDays,
+		"min_age_days":   schedule.MinAgeDays,
+		"max_age_days":   schedule.MaxAgeDays,
 		"matching_coops": matches,
 	})
 }
@@ -651,17 +635,17 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 
 		vaccineName := parts[1] // ดึงชื่อวัคซีนออกมา
 
-		// 🛑 ลบแถว "เกณฑ์/ประเภท" (coop_id IS NULL ในตาราง vaccine เอง) เพื่อไม่ให้
-		// วัคซีนตัวนี้ไปแจ้งเตือนอีก - เป็นแถวกลาง (ไม่ผูกกับ user) จึงลบได้ตรงๆ
-		err := database.DB.Where("coop_id IS NULL AND name_vaccine = ?", vaccineName).Delete(&models.Vaccine{}).Error
+		// 🛑 ลบแถว "เกณฑ์/ประเภท" ในตาราง vaccine เอง เพื่อไม่ให้วัคซีนตัวนี้ไปแจ้งเตือน
+		// อีก - เป็นแถวกลาง (ไม่ผูกกับ user) จึงลบได้ตรงๆ
+		err := database.DB.Where("name_vaccine = ?", vaccineName).Delete(&models.Vaccine{}).Error
 		if err != nil {
 			log.Printf("Failed to delete vaccine schedule: %v", err)
 			http.Error(w, "Failed to delete schedule", http.StatusInternalServerError)
 			return
 		}
 
-		// 🛑 ลบประวัติการให้วัคซีนที่เคยมีอยู่ในตารางจริง (vaccine) ด้วย - เฉพาะคอกของผู้เรียกเท่านั้น
-		database.DB.Where("name_vaccine = ? AND coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", vaccineName, userID).Delete(&models.Vaccine{})
+		// 🛑 ลบประวัติการให้วัคซีนที่เคยมีอยู่ในตาราง vaccine_history ด้วย - เฉพาะคอกของผู้เรียกเท่านั้น
+		database.DB.Where("name_vaccine = ? AND coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", vaccineName, userID).Delete(&models.VaccineHistory{})
 
 		w.WriteHeader(http.StatusOK)
 		log.Printf("[%s] %s - %d ✓ Deleted vaccine schedule: %s", r.Method, r.RequestURI, http.StatusOK, vaccineName)
@@ -727,32 +711,32 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 
 		if body.IsCompleted {
 			var count int64
-			database.DB.Model(&models.Vaccine{}).Where("coop_id = ? AND name_vaccine = ?", coopID, vaccineName).Count(&count)
+			database.DB.Model(&models.VaccineHistory{}).Where("coop_id = ? AND name_vaccine = ?", coopID, vaccineName).Count(&count)
 			if count == 0 {
 				// Birthday ต้องเป็นวันเกิดไก่จริงของคอกนี้ (เหมือนที่ CreateVaccine
 				// ในวาซีนrepository ทำ) ไม่ใช่เวลาปัจจุบันตอนกดให้วัคซีน - ของเดิมใส่
 				// &now ผิด ทำให้ birthday ของประวัติวัคซีนคลาดเคลื่อนจากวันเกิดจริง
 				now := time.Now()
-				vaccine := models.Vaccine{
-					CoopID:         &coopID,
+				history := models.VaccineHistory{
+					CoopID:         coopID,
 					NameCoop:       coop.NameCoop,
-					Birthday:       &coop.Birthday,
+					Birthday:       coop.Birthday,
 					Name:           vaccineName,
 					Method:         body.Method,
 					RecommendedAge: strconv.Itoa(body.ChickenAge),
 					Note:           body.Note,
-					RecordDate:     &now,
+					RecordDate:     now,
 				}
-				if err := database.DB.Create(&vaccine).Error; err != nil {
-					log.Printf("Failed to create vaccine record: %v", err)
+				if err := database.DB.Create(&history).Error; err != nil {
+					log.Printf("Failed to create vaccine history record: %v", err)
 					http.Error(w, "Failed to save status", http.StatusInternalServerError)
 					return
 				}
 			}
 		} else {
-			err := database.DB.Where("coop_id = ? AND name_vaccine = ?", coopID, vaccineName).Delete(&models.Vaccine{}).Error
+			err := database.DB.Where("coop_id = ? AND name_vaccine = ?", coopID, vaccineName).Delete(&models.VaccineHistory{}).Error
 			if err != nil {
-				log.Printf("Failed to delete vaccine record: %v", err)
+				log.Printf("Failed to delete vaccine history record: %v", err)
 				http.Error(w, "Failed to delete status", http.StatusInternalServerError)
 				return
 			}
@@ -793,18 +777,18 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var schedules []models.Vaccine
-	if err := database.DB.Where("coop_id IS NULL").Find(&schedules).Error; err != nil {
+	if err := database.DB.Find(&schedules).Error; err != nil {
 		log.Printf("[%s] %s - %d (Failed to retrieve schedules: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to retrieve schedules", http.StatusInternalServerError)
 		return
 	}
 
-	type VaccineHistory struct {
+	type vaccineHistoryRow struct {
 		CoopID      int    `gorm:"column:coop_id"`
 		VaccineName string `gorm:"column:name_vaccine"`
 	}
-	var histories []VaccineHistory
-	database.DB.Model(&models.Vaccine{}).Select("coop_id, name_vaccine").
+	var histories []vaccineHistoryRow
+	database.DB.Model(&models.VaccineHistory{}).Select("coop_id, name_vaccine").
 		Where("coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", userID).
 		Find(&histories)
 
@@ -822,11 +806,8 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, schedule := range schedules {
-			if schedule.MinAgeDays == nil || schedule.MaxAgeDays == nil {
-				continue // แถวประเภทที่ข้อมูลช่วงอายุไม่ครบ ข้ามไป (ไม่ควรเกิดขึ้นปกติ)
-			}
-			windowStart := coop.Birthday.AddDate(0, 0, *schedule.MinAgeDays)
-			windowEnd := coop.Birthday.AddDate(0, 0, *schedule.MaxAgeDays)
+			windowStart := coop.Birthday.AddDate(0, 0, schedule.MinAgeDays)
+			windowEnd := coop.Birthday.AddDate(0, 0, schedule.MaxAgeDays)
 
 			// ถ้าวันสุดท้ายของช่วงอายุที่ควรให้วัคซีนนี้ (max_age_days) ผ่านไปแล้ว
 			// ตั้งแต่ก่อนวันที่รับไก่เข้าคอก แปลว่าไก่โตเกินเงื่อนไขนี้มาก่อนจะมาถึงฟาร์มเรา
@@ -854,7 +835,7 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 				InjectionType: schedule.Method,
 				IsCompleted:   isDone,
 				IsOverdue:     false,
-				ChickenAge:    *schedule.MinAgeDays,
+				ChickenAge:    schedule.MinAgeDays,
 				Description:   schedule.Note,
 			})
 		}
@@ -899,7 +880,7 @@ func GetVaccineNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var schedules []models.Vaccine
-	if err := database.DB.Where("coop_id IS NULL").Find(&schedules).Error; err != nil {
+	if err := database.DB.Find(&schedules).Error; err != nil {
 		http.Error(w, "Failed to retrieve schedules", http.StatusInternalServerError)
 		return
 	}
@@ -927,12 +908,9 @@ func GetVaccineNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 		ageInDaysTomorrow := ageInDaysToday + 1
 
 		for _, schedule := range schedules {
-			if schedule.MinAgeDays == nil || schedule.MaxAgeDays == nil {
-				continue
-			}
 			// 🛑 กรอง: ถ้าช่วงอายุที่ควรให้วัคซีนนี้ (ถึง max_age_days) ผ่านไปหมดแล้ว
 			// ตั้งแต่ก่อนวันนำเข้าไก่ แปลว่าไก่โตเกินเงื่อนไขนี้มาก่อนถึงฟาร์มเรา ไม่ต้องแจ้งเตือน
-			windowEnd := coop.Birthday.AddDate(0, 0, *schedule.MaxAgeDays)
+			windowEnd := coop.Birthday.AddDate(0, 0, schedule.MaxAgeDays)
 			if windowEnd.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
 				continue
 			}
@@ -940,7 +918,7 @@ func GetVaccineNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 			coopName := "คอก " + strconv.Itoa(coop.CoopID)
 
 			// ตรวจสอบคิวของ "วันนี้"
-			if ageInDaysToday == *schedule.MinAgeDays {
+			if ageInDaysToday == schedule.MinAgeDays {
 				notifications = append(notifications, NotificationResponse{
 					Name:       schedule.Name,
 					CoopName:   coopName,
@@ -950,7 +928,7 @@ func GetVaccineNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// ตรวจสอบคิวของ "วันพรุ่งนี้"
-			if ageInDaysTomorrow == *schedule.MinAgeDays {
+			if ageInDaysTomorrow == schedule.MinAgeDays {
 				notifications = append(notifications, NotificationResponse{
 					Name:       schedule.Name,
 					CoopName:   coopName,
@@ -1032,13 +1010,9 @@ func UpdateCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 	// Log ดูค่าที่ส่งมาจาก Flutter เพื่อเช็คความชัวร์ใน Console ของ Go
 	log.Printf("📥 รับค่าแก้ไข: %s -> Name: %s, MinAge: %d, MaxAge: %d", oldName, body.Name, body.MinAgeDays, body.MaxAgeDays)
 
-	// 🌟 อัปเดตแถว "ประเภท" (coop_id IS NULL) ในตาราง vaccine เอง - ใช้ .Updates()
-	// กับ map ตรงๆ (ไม่ใช่ struct) จึงต้องเซ็ต "name" (คอลัมน์เดิม NOT NULL) ควบคู่
-	// กับ "name_vaccine" เองด้วยมือ เพราะ BeforeSave hook จะไม่ทำงานกับการ update
-	// แบบ map
-	err := database.DB.Model(&models.Vaccine{}).Where("coop_id IS NULL AND name_vaccine = ?", oldName).Updates(map[string]interface{}{
+	// 🌟 อัปเดตแถว "ประเภท" ในตาราง vaccine เอง
+	err := database.DB.Model(&models.Vaccine{}).Where("name_vaccine = ?", oldName).Updates(map[string]interface{}{
 		"name_vaccine": body.Name,
-		"name":         body.Name,
 		"method":       body.Method,
 		"min_age_days": body.MinAgeDays, // ส่งค่า int ตรงเข้าฐานข้อมูล
 		"max_age_days": body.MaxAgeDays, // ส่งค่า int ตรงเข้าฐานข้อมูล
@@ -1051,12 +1025,11 @@ func UpdateCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 🌟 อัปเดตชื่อในแถวประวัติให้จริงที่ผูกกับคอก (coop_id IS NOT NULL) ด้วย เผื่อ
+	// 🌟 อัปเดตชื่อในตาราง vaccine_history (ประวัติให้จริงที่ผูกกับคอก) ด้วย เผื่อ
 	// ผู้ใช้แก้ไขชื่อวัคซีน ไม่ให้ชื่อในประวัติเก่าค้างเป็นชื่อเดิม
 	if body.Name != oldName {
-		database.DB.Model(&models.Vaccine{}).Where("coop_id IS NOT NULL AND name_vaccine = ?", oldName).Updates(map[string]interface{}{
+		database.DB.Model(&models.VaccineHistory{}).Where("name_vaccine = ?", oldName).Updates(map[string]interface{}{
 			"name_vaccine": body.Name,
-			"name":         body.Name,
 		})
 	}
 

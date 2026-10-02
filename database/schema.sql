@@ -88,21 +88,34 @@ CREATE TABLE IF NOT EXISTS health (
     INDEX idx_record_date (record_date)
 );
 
--- 8. สร้างตารางข้อมูลวัคซีน (vaccine)
+-- 8. สร้างตารางประเภทยา/วัคซีน (vaccine) - เก็บแค่ "เกณฑ์" (ชื่อ, วิธีให้, ช่วงอายุ
+-- ที่ควรให้) ไม่ผูกกับคอกไหนทั้งนั้น ใช้ร่วมกันได้กับทุกคอก
 CREATE TABLE IF NOT EXISTS vaccine (
     vaccine_id INT AUTO_INCREMENT PRIMARY KEY,
-    coop_id INT,
+    name_vaccine VARCHAR(50) NOT NULL,
+    method VARCHAR(100) NOT NULL,
+    min_age_days INT NOT NULL,
+    max_age_days INT NOT NULL,
+    note VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- 8b. สร้างตารางประวัติการให้วัคซีนจริง (vaccine_history) - แยกจาก vaccine ด้านบน
+-- ตารางนี้ทุกแถวคือเหตุการณ์ "ให้จริง" กับคอกใดคอกหนึ่งแล้วเสมอ
+CREATE TABLE IF NOT EXISTS vaccine_history (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    coop_id INT NOT NULL,
     name_coop VARCHAR(100),
     birthday DATE,
-    name VARCHAR(50) NOT NULL,
-    record_date DATE NOT NULL,
+    name_vaccine VARCHAR(50) NOT NULL,
     method VARCHAR(100) NOT NULL,
-    recommended_age VARCHAR(20) NOT NULL,
+    record_date DATE NOT NULL,
+    recommended_age VARCHAR(20),
     note VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (coop_id) REFERENCES coop(coop_id) ON DELETE CASCADE,
-    FOREIGN KEY (name_coop) REFERENCES coop(name_coop),
     INDEX idx_coop_id (coop_id),
-    INDEX idx_birthday (birthday)
+    INDEX idx_name_coop (name_coop)
 );

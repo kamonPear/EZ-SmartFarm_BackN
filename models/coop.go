@@ -18,10 +18,10 @@ type Coop struct {
 	PosY *float64 `gorm:"column:pos_y" json:"pos_y"`
 
 	// Relations (แก้โดยการลบ references:CoopID ออก)
-	Devices  []Device  `gorm:"foreignKey:CoopID" json:"devices,omitempty"`
-	Eggs     []Egg     `gorm:"foreignKey:CoopID" json:"eggs,omitempty"`
-	Health   []Health  `gorm:"foreignKey:CoopID" json:"health,omitempty"`
-	Vaccines []Vaccine `gorm:"foreignKey:CoopID" json:"vaccines,omitempty"`
+	Devices        []Device         `gorm:"foreignKey:CoopID" json:"devices,omitempty"`
+	Eggs           []Egg            `gorm:"foreignKey:CoopID" json:"eggs,omitempty"`
+	Health         []Health         `gorm:"foreignKey:CoopID" json:"health,omitempty"`
+	VaccineHistory []VaccineHistory `gorm:"foreignKey:CoopID" json:"vaccine_history,omitempty"`
 }
 
 // TableName specifies the table name for Coop model

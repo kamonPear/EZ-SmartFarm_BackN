@@ -21,15 +21,23 @@ func MigrateModels(db *gorm.DB) error {
 		log.Printf("Warning: Could not disable foreign key checks: %v", err)
 	}
 
-	// egg.coop_id and vaccine.coop_id were created as BIGINT (GORM's default mapping for
-	// a bare Go `int` before the explicit `type:int` tag existed on those fields), while
-	// coop.coop_id is INT. That mismatch made AutoMigrate's attempt to add the
-	// fk_coop_eggs/fk_coop_vaccines constraints below fail with error 3780 on every boot -
-	// and since AutoMigrate stops at the first model that errors, everything after Egg in
-	// the list below never got migrated either. Narrow both first so those FKs can
-	// actually be created (see the ensureForeignKey calls after AutoMigrate).
+	// egg.coop_id was created as BIGINT (GORM's default mapping for a bare Go `int`
+	// before the explicit `type:int` tag existed on that field), while coop.coop_id is
+	// INT. That mismatch made AutoMigrate's attempt to add the fk_coop_eggs constraint
+	// below fail with error 3780 on every boot - and since AutoMigrate stops at the
+	// first model that errors, everything after Egg in the list below never got
+	// migrated either. Narrow it first so that FK can actually be created (see the
+	// ensureForeignKey call after AutoMigrate).
 	ensureColumnIsInt(db, "egg", "coop_id", false)
-	ensureColumnIsInt(db, "vaccine", "coop_id", false)
+
+	// vaccine ("ประเภท" ยา/วัคซีน) และ vaccine_history (ประวัติให้จริงต่อคอก) เคยถูก
+	// รวมเป็นตารางเดียวกันมาก่อน (แถว coop_id IS NULL = ประเภท, coop_id ไม่ว่าง =
+	// ประวัติ) แต่ทำให้ผู้ใช้ดูตารางแล้วสับสนว่าแถวไหนเป็นอะไร จึงแยกกลับเป็น 2 ตาราง
+	// ตามที่ผู้ใช้ขอ - ต้องรันก่อน AutoMigrate ทั้งก้อนด้านล่าง เพราะ models.Vaccine
+	// ตอนนี้ประกาศ min_age_days/max_age_days เป็น NOT NULL แล้ว (ไม่ใช่ pointer แบบ
+	// ตอนรวมตาราง) ถ้าแถวประวัติเก่า (ซึ่ง min_age_days เป็น NULL) ยังค้างอยู่ใน
+	// vaccine ตอน AutoMigrate พยายามบังคับ NOT NULL จะ error ทันที
+	migrateVaccineSplit(db)
 
 	if err := db.AutoMigrate(
 		&models.User{},
@@ -48,6 +56,7 @@ func MigrateModels(db *gorm.DB) error {
 		&models.Egg{},
 		&models.Health{},
 		&models.Vaccine{},
+		&models.VaccineHistory{},
 		&models.HealthAppointment{},
 		&models.FarmThreshold{},
 	); err != nil {
@@ -69,20 +78,11 @@ func MigrateModels(db *gorm.DB) error {
 
 	// AutoMigrate above should now create these itself (coop_id is narrowed to INT before
 	// it runs), but add them explicitly too as a guarded fallback - matching the naming
-	// GORM itself used to attempt (from Coop's has-many Eggs/Vaccines associations), so
-	// this is a no-op once AutoMigrate has already succeeded. ON DELETE CASCADE matches
+	// GORM itself used to attempt (from Coop's has-many Eggs/VaccineHistory associations),
+	// so this is a no-op once AutoMigrate has already succeeded. ON DELETE CASCADE matches
 	// device_ibfk_1/health_ibfk_1, the other two real FKs onto coop.
 	ensureForeignKey(db, "egg", "fk_coop_eggs", "ALTER TABLE `egg` ADD CONSTRAINT `fk_coop_eggs` FOREIGN KEY (`coop_id`) REFERENCES `coop`(`coop_id`) ON DELETE CASCADE")
-	ensureForeignKey(db, "vaccine", "fk_coop_vaccines", "ALTER TABLE `vaccine` ADD CONSTRAINT `fk_coop_vaccines` FOREIGN KEY (`coop_id`) REFERENCES `coop`(`coop_id`) ON DELETE CASCADE")
-
-	// medicine_schedules (ตาราง "ประเภท" ยา/วัคซีน แยกต่างหาก) ถูกรวมเข้า vaccine
-	// เองแล้ว (แถวที่ coop_id IS NULL = เป็นแค่ประเภท ยังไม่ผูกคอกไหน - ดู
-	// models/vaccine.go) คอลัมน์พวกนี้เดิมบังคับ NOT NULL เพราะตารางนี้เคยใช้เก็บ
-	// แค่ "ประวัติให้จริง" อย่างเดียว ต้องผ่อนให้เป็น NULL ได้ ไม่งั้น insert แถว
-	// ประเภทไม่ผ่าน (FK บน coop_id ก็ยังทำงานปกติกับค่า NULL อยู่แล้ว ไม่ต้องแตะ)
-	ensureColumnNullable(db, "vaccine", "coop_id", "INT")
-	ensureColumnNullable(db, "vaccine", "record_date", "DATE")
-	ensureColumnNullable(db, "vaccine", "recommended_age", "VARCHAR(20)")
+	ensureForeignKey(db, "vaccine_history", "fk_coop_vaccine_history", "ALTER TABLE `vaccine_history` ADD CONSTRAINT `fk_coop_vaccine_history` FOREIGN KEY (`coop_id`) REFERENCES `coop`(`coop_id`) ON DELETE CASCADE")
 
 	// The name_coop FKs below turned out to be unreliable: app code never actually populates
 	// name_coop on child rows (it's always left as ""), and multiple coops can have a blank
@@ -328,25 +328,91 @@ func ensureColumnIsInt(db *gorm.DB, table, column string, nullable bool) {
 	}
 }
 
-// ensureColumnNullable relaxes column on table from NOT NULL to NULL if it isn't
-// already nullable. columnDef is the column's type (e.g. "INT", "DATE",
-// "VARCHAR(20)") since MODIFY COLUMN requires restating the full definition.
-// A no-op once the column already allows NULL.
-func ensureColumnNullable(db *gorm.DB, table, column, columnDef string) {
-	var isNullable string
+// ensureColumnDropped removes a column from table if it's still present. Used to
+// clean up columns that no longer belong on a table after a schema restructure
+// (e.g. vaccine's old coop_id/record_date columns once administration history
+// moved to its own table - see migrateVaccineSplit). A no-op once already dropped.
+func ensureColumnDropped(db *gorm.DB, table, column string) {
+	var count int64
 	if err := db.Raw(
-		"SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+		"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
 		table, column,
-	).Scan(&isNullable).Error; err != nil {
-		log.Printf("Warning: could not check nullability of %s.%s: %v", table, column, err)
+	).Scan(&count).Error; err != nil {
+		log.Printf("Warning: could not check column %s.%s: %v", table, column, err)
 		return
 	}
-	if isNullable == "" || isNullable == "YES" {
+	if count == 0 {
 		return
 	}
-	if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` %s NULL", table, column, columnDef)).Error; err != nil {
-		log.Printf("Warning: could not make %s.%s nullable: %v", table, column, err)
+	if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` DROP COLUMN `%s`", table, column)).Error; err != nil {
+		log.Printf("Warning: could not drop column %s.%s: %v", table, column, err)
 	}
+}
+
+// migrateVaccineSplit is the one-time cutover from the old single-table vaccine
+// design (type rows with coop_id NULL + administration rows with coop_id set, all
+// mixed in the "vaccine" table) to two separate tables: "vaccine" (types only) and
+// "vaccine_history" (administration records only, see models/vaccine_history.go).
+// Guarded on vaccine.coop_id still existing, so this only ever does real work once -
+// every startup after that it's a single harmless COUNT query.
+func migrateVaccineSplit(db *gorm.DB) {
+	var coopIDColumnCount int64
+	if err := db.Raw(
+		"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vaccine' AND COLUMN_NAME = 'coop_id'",
+	).Scan(&coopIDColumnCount).Error; err != nil {
+		log.Printf("Warning: could not check vaccine.coop_id for split migration: %v", err)
+		return
+	}
+	if coopIDColumnCount == 0 {
+		return // already migrated
+	}
+
+	// 0. vaccine_history doesn't exist yet the very first time this runs (it's only
+	// otherwise created by the main AutoMigrate call further down, which runs AFTER
+	// this function) - create just this one table now so there's somewhere to copy
+	// the administration rows into below.
+	if err := db.AutoMigrate(&models.VaccineHistory{}); err != nil {
+		log.Printf("Warning: could not create vaccine_history ahead of data migration: %v", err)
+		return
+	}
+
+	// 1. copy every administration row (coop_id NOT NULL) into vaccine_history
+	if err := db.Exec(`
+		INSERT INTO vaccine_history (coop_id, name_coop, birthday, name_vaccine, method, note, record_date, recommended_age)
+		SELECT coop_id, name_coop, birthday, name_vaccine, method, note, record_date, recommended_age
+		FROM vaccine WHERE coop_id IS NOT NULL
+	`).Error; err != nil {
+		log.Printf("Warning: could not copy vaccine administration rows into vaccine_history: %v", err)
+		return
+	}
+
+	// 2. those rows now live in vaccine_history - remove them from vaccine so only
+	// type rows remain there
+	if err := db.Exec("DELETE FROM vaccine WHERE coop_id IS NOT NULL").Error; err != nil {
+		log.Printf("Warning: could not remove migrated rows from vaccine: %v", err)
+		return
+	}
+
+	// 3. drop the FK and the columns that only ever applied to administration rows -
+	// vaccine is now types-only (name_vaccine/method/note/min_age_days/max_age_days)
+	ensureForeignKeyDropped(db, "vaccine", "fk_coop_vaccines")
+	ensureColumnDropped(db, "vaccine", "coop_id")
+	ensureColumnDropped(db, "vaccine", "name_coop")
+	ensureColumnDropped(db, "vaccine", "birthday")
+	ensureColumnDropped(db, "vaccine", "record_date")
+	ensureColumnDropped(db, "vaccine", "recommended_age")
+	// legacy duplicate of name_vaccine left over from a much older schema - dead
+	// weight even before this split, dropping it now since we're already here
+	ensureColumnDropped(db, "vaccine", "name")
+
+	// 4. every remaining row is a type row now, so min_age_days/max_age_days are
+	// always populated - narrow them to a plain NOT NULL INT to match models.Vaccine
+	// (ensureColumnIsInt is a no-op once already INT, so this is safe to leave in
+	// permanently rather than only inside this guarded block)
+	ensureColumnIsInt(db, "vaccine", "min_age_days", false)
+	ensureColumnIsInt(db, "vaccine", "max_age_days", false)
+
+	log.Printf("✓ Split vaccine into vaccine (types) + vaccine_history (administration records)")
 }
 
 // ensureIndexDropped removes an index if it's still present (used to walk back constraints added by earlier migrations)
