@@ -216,9 +216,9 @@ func DeleteCoop(coopID int, userID int) error {
 		return err
 	}
 
-	if err := tx.Where("coop_id = ?", coopID).Delete(&models.Vaccine{}).Error; err != nil {
+	if err := tx.Where("coop_id = ?", coopID).Delete(&models.VaccineHistory{}).Error; err != nil {
 		tx.Rollback()
-		log.Printf("Error deleting vaccines: %v", err)
+		log.Printf("Error deleting vaccine history: %v", err)
 		return err
 	}
 
