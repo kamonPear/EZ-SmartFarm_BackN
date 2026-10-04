@@ -50,7 +50,7 @@ func GetCoopByID(coopID int) (*models.Coop, error) {
 	if err := DB.Preload("Devices").
 		Preload("Eggs").
 		Preload("Health").
-		Preload("Vaccines").
+		Preload("VaccineHistory").
 		Where("coop_id = ?", coopID).
 		First(&coop).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -72,7 +72,7 @@ func GetCoopByIDForUser(coopID, userID int) (*models.Coop, error) {
 	if err := DB.Preload("Devices").
 		Preload("Eggs").
 		Preload("Health").
-		Preload("Vaccines").
+		Preload("VaccineHistory").
 		Where("coop_id = ? AND user_id = ?", coopID, userID).
 		First(&coop).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -92,7 +92,7 @@ func GetAllCoops(userID int) ([]models.Coop, error) {
 	if err := DB.Preload("Devices").
 		Preload("Eggs").
 		Preload("Health").
-		Preload("Vaccines").
+		Preload("VaccineHistory").
 		Where("user_id = ?", userID).
 		Find(&coops).Error; err != nil {
 		log.Printf("Error fetching coops: %v", err)
