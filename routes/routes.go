@@ -124,6 +124,7 @@ func SetupRoutes(db *gorm.DB) {
 	// Sensors - IoT device ingestion, no user JWT available in the field, stays public
 	rg.POST("/api/sensor-logs", handlers.ReceiveSensorDataHandler)
 	rg.POST("/api/sensor/upload", handlers.HandleArduinoUpload(db))
+	rg.GET("/api/motion-alerts", auth.RequireAuth(handlers.GetMotionAlertsHandler))
 }
 
 // handleCoopsGet dispatches GET /api/coops to a single-record or list lookup

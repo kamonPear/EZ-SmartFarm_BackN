@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
 
+	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/database"
 	"EZ-SmartFarm_BachN/models"
 )
@@ -18,6 +20,33 @@ type DeviceResponse struct {
 	Name      string `json:"name"`
 	Icon      string `json:"icon"`
 	Status    string `json:"status"`
+}
+
+// GetMotionAlertsHandler returns the caller's motion-detection events (PIR sensors
+// at coop door frames) from the last 24 hours, newest first.
+// GET /api/motion-alerts
+func GetMotionAlertsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	since := time.Now().Add(-24 * time.Hour)
+	rows, err := database.GetMotionAlertsForUser(userID, since)
+	if err != nil {
+		log.Printf("GetMotionAlertsHandler: failed to fetch motion alerts for user %d: %v", userID, err)
+		http.Error(w, "Failed to fetch motion alerts", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rows)
 }
 
 // ReceiveSensorDataHandler handles receiving sensor data from MQTT or IoT devices
