@@ -88,6 +88,13 @@ func DeleteAllImportFood(userID int) error {
 		log.Printf("Error deleting import food history: %v", err)
 		return err
 	}
-	log.Println("✓ Import food history cleared")
+	// ลบ lot ประวัติไปแล้วแต่ยอดรวมคงเหลือ (foodstock) เป็นตัวเลขแยกต่างหากที่สะสมไว้
+	// เองจาก addToFoodstock - ถ้าไม่ล้างตรงนี้ด้วย ยอดเก่าจะค้างอยู่ถาวรแม้ลบ lot
+	// ไปหมดแล้ว (เคยพบว่า user ใหม่/ที่เพิ่งลบ lot เห็นยอดคงเหลือเก่าค้างอยู่)
+	if err := DB.Where("user_id = ?", userID).Delete(&models.Foodstock{}).Error; err != nil {
+		log.Printf("Error clearing foodstock totals: %v", err)
+		return err
+	}
+	log.Println("✓ Import food history and foodstock totals cleared")
 	return nil
 }
