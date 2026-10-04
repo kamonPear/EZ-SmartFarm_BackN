@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"EZ-SmartFarm_BachN/auth"
@@ -126,6 +128,50 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		"id":       user.ID,
 		"username": user.Username,
 	})
+}
+
+// DeleteUserHandler permanently deletes an account and everything it owns (coops and
+// everything under them, farm threshold/layout, food stock/imports, etc.) Gated by
+// the same X-Admin-Key as RegisterHandler, not auth.RequireAuth - deleting an account
+// is an administrative action, not something a logged-in user does to themselves via
+// their own token, and this intentionally allows deleting an account by id without
+// needing to log in as that account first (e.g. the account's credentials were lost).
+// DELETE /api/auth/users?id=<id>  needs X-Admin-Key
+func DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		writeJSONErr(w, http.StatusBadRequest, "missing id parameter")
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		writeJSONErr(w, http.StatusBadRequest, "invalid id parameter")
+		return
+	}
+
+	if _, err := database.GetUserByID(id); err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			writeJSONErr(w, http.StatusNotFound, "user not found")
+			return
+		}
+		log.Printf("DeleteUserHandler: error looking up user %d: %v", id, err)
+		writeJSONErr(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	if err := database.DeleteUser(id); err != nil {
+		log.Printf("DeleteUserHandler: error deleting user %d: %v", id, err)
+		writeJSONErr(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	log.Printf("✓ Deleted user %d and all owned data", id)
+	writeJSON(w, http.StatusOK, map[string]string{"message": "user and all owned data deleted"})
 }
 
 // MeHandler returns the authenticated caller's own user record. Mounted behind auth.RequireAuth.

@@ -33,6 +33,7 @@ func SetupRoutes(db *gorm.DB) {
 	// Auth
 	rg.POST("/api/auth/login", handlers.LoginHandler)                      // public
 	rg.POST("/api/auth/register", auth.RequireAdminKey(handlers.RegisterHandler)) // needs X-Admin-Key
+	rg.DELETE("/api/auth/users", auth.RequireAdminKey(handlers.DeleteUserHandler)) // needs X-Admin-Key
 	rg.GET("/api/auth/me", auth.RequireAuth(handlers.MeHandler))               // any logged-in user
 
 	// Coops
