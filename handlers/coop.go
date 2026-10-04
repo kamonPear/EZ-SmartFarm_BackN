@@ -105,6 +105,8 @@ func GetCoopHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	attachLatestSensorValues(coop.Devices)
+
 	w.Header().Set("Content-Type", "application/json")
 	log.Printf("[%s] %s - %d ✓ Retrieved coop ID: %d", r.Method, r.RequestURI, http.StatusOK, coop.CoopID)
 	json.NewEncoder(w).Encode(coop)

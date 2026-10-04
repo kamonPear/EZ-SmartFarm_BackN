@@ -87,12 +87,17 @@ func getEnv(key, defaultValue string) string {
 	return value
 }
 
+// offlineAfterSeconds คือเวลาที่ไม่ได้รับข้อมูลจากอุปกรณ์ก่อนจะถือว่า Offline
+// ถ้ายังส่งข้อมูลมาเรื่อยๆ จะเป็น Online (ตั้งใน sensor_log.go ทุกครั้งที่รับข้อความ)
+// แต่ถ้าเงียบเกิน 15 วินาทีจะเป็น Offline แล้วกลับเป็น Online ทันทีเมื่อมีข้อมูลเข้ามาอีก
+const offlineAfterSeconds = 15
+
 func StartOfflineChecker() {
 	for {
 		time.Sleep(5 * time.Second)
 		db := database.GetDB()
 		if db != nil {
-			db.Exec("UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL 15 SECOND")
+			db.Exec("UPDATE device SET current_status = 'Offline' WHERE last_update < NOW() - INTERVAL ? SECOND", offlineAfterSeconds)
 		}
 	}
 }
