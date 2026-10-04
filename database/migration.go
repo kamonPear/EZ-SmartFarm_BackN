@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/models"
@@ -349,6 +350,20 @@ func ensureColumnDropped(db *gorm.DB, table, column string) {
 	}
 }
 
+// migrationColumnExists reports whether table.column currently exists. Used by
+// migrateVaccineSplit to tolerate running from a partially-completed prior attempt.
+func migrationColumnExists(db *gorm.DB, table, column string) bool {
+	var count int64
+	if err := db.Raw(
+		"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+		table, column,
+	).Scan(&count).Error; err != nil {
+		log.Printf("Warning: could not check column %s.%s: %v", table, column, err)
+		return false
+	}
+	return count > 0
+}
+
 // migrateVaccineSplit is the one-time cutover from the old single-table vaccine
 // design (type rows with coop_id NULL + administration rows with coop_id set, all
 // mixed in the "vaccine" table) to two separate tables: "vaccine" (types only) and
@@ -376,12 +391,38 @@ func migrateVaccineSplit(db *gorm.DB) {
 		return
 	}
 
-	// 1. copy every administration row (coop_id NOT NULL) into vaccine_history
-	if err := db.Exec(`
-		INSERT INTO vaccine_history (coop_id, name_coop, birthday, name_vaccine, method, note, record_date, recommended_age)
-		SELECT coop_id, name_coop, birthday, name_vaccine, method, note, record_date, recommended_age
-		FROM vaccine WHERE coop_id IS NOT NULL
-	`).Error; err != nil {
+	// 1. copy every administration row (coop_id NOT NULL) into vaccine_history. This
+	// whole function can fail partway through on any run (step 3 below drops several
+	// columns one at a time and any single one of those Exec calls can fail without
+	// aborting the rest), and the guard above only checks coop_id - so a prior run
+	// may have already dropped record_date/name_coop/birthday/recommended_age while
+	// still being considered "not done yet" on the next boot. Build the column list
+	// from what's actually still there instead of assuming the full original
+	// pre-split column set is present, or this INSERT fails forever on every restart
+	// (as it did: "Unknown column 'record_date'" after an earlier run got that far).
+	insertCols := []string{"coop_id", "name_vaccine", "method", "note"}
+	selectExprs := []string{"coop_id", "name_vaccine", "method", "note"}
+	optional := []struct {
+		column, fallback string
+	}{
+		{"name_coop", "''"},
+		{"birthday", "NULL"},
+		{"record_date", "NOW()"},
+		{"recommended_age", "''"},
+	}
+	for _, c := range optional {
+		insertCols = append(insertCols, c.column)
+		if migrationColumnExists(db, "vaccine", c.column) {
+			selectExprs = append(selectExprs, c.column)
+		} else {
+			selectExprs = append(selectExprs, c.fallback)
+		}
+	}
+	insertSQL := fmt.Sprintf(
+		"INSERT INTO vaccine_history (%s) SELECT %s FROM vaccine WHERE coop_id IS NOT NULL",
+		strings.Join(insertCols, ", "), strings.Join(selectExprs, ", "),
+	)
+	if err := db.Exec(insertSQL).Error; err != nil {
 		log.Printf("Warning: could not copy vaccine administration rows into vaccine_history: %v", err)
 		return
 	}
