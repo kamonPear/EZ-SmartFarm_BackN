@@ -25,9 +25,21 @@ func ProcessAndSaveSensorLog(payload SensorPayload) {
 		return
 	}
 
-	// 2. อัปเดตตาราง devices ให้สถานะเป็น Online และบันทึกเวลาล่าสุด
+	// 2. อัปเดตตาราง devices แล้วบันทึกเวลาล่าสุด
+	// เซนเซอร์: ส่งข้อมูลมา = Online
+	// อุปกรณ์สั่งงาน (พัดลม/หลอดไฟ): Online เมื่อกำลังทำงาน (value > 0) และ Offline เมื่อหยุดทำงาน
+	// (บอร์ดส่งสถานะมาทุกรอบ ทั้งตอนติดและตอนดับ)
+	status := "Online"
+	if device.DeviceType == "Actuator" && payload.Value <= 0 {
+		status = "Offline"
+	}
+	if device.CurrentStatus != status {
+		fmt.Printf("🔺 [Status] คอก %d ช่อง %d '%s': %s -> %s (เงียบมา %.1f วินาที, ค่า=%.2f)\n",
+			payload.CoopID, payload.SlotIndex, device.Name, device.CurrentStatus, status,
+			time.Since(device.LastUpdate).Seconds(), payload.Value)
+	}
 	db.Model(&device).Updates(map[string]interface{}{
-		"current_status": "Online",
+		"current_status": status,
 		"last_update":    time.Now(),
 	})
 

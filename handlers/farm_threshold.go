@@ -8,6 +8,7 @@ import (
 	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/database"
 	"EZ-SmartFarm_BachN/models"
+	"EZ-SmartFarm_BachN/services"
 )
 
 // GetFarmThresholdHandler retrieves the caller's farm-wide target temperature/ammonia
@@ -64,6 +65,9 @@ func UpdateFarmThresholdHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to update farm threshold", http.StatusInternalServerError)
 		return
 	}
+
+	// ส่งค่าใหม่ไปให้ Arduino ทุกคอกของผู้ใช้ (retained) ทำใน goroutine ไม่ให้หน้าเว็บรอ broker
+	go services.PublishThresholdsForUser(userID)
 
 	w.Header().Set("Content-Type", "application/json")
 	log.Printf("[%s] %s - %d ✓ Farm threshold set to %.1f°C / %.1f ppm", r.Method, r.RequestURI, http.StatusOK, req.Temperature, req.Ammonia)
