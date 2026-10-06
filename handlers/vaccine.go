@@ -439,7 +439,7 @@ func GetRecommendedVaccinesHandler(w http.ResponseWriter, r *http.Request) {
 
 		// 🌟 ตรวจสอบว่าถึงวันที่นำไก่เข้าหรือยัง (เทียบแบบ YYYY-MM-DD ตัดปัญหาเรื่องเวลา)
 		now := time.Now()
-		if !coop.DateAdoptAnimals.IsZero() && now.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
+		if !coop.DateAdoptAnimals.IsZero() && models.DateKey(now) < models.DateKey(coop.DateAdoptAnimals) {
 			// ถ้ายังไม่ถึงวันนำไก่เข้า ให้ส่งอาเรย์ว่างกลับไปเลย เพราะยังไม่ต้องแนะนำ
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -571,7 +571,7 @@ func GetVaccineMatchingCoopsHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		// ยังไม่ถึงวันนำเข้าเลี้ยง - ข้ามไปก่อน (เหมือนเงื่อนไขใน GetRecommendedVaccinesHandler)
-		if now.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
+		if models.DateKey(now) < models.DateKey(coop.DateAdoptAnimals) {
 			continue
 		}
 		ageInDays := models.CalculateChickenAge(coop.Birthday)
@@ -827,7 +827,7 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 			// ถ้าวันสุดท้ายของช่วงอายุที่ควรให้วัคซีนนี้ (max_age_days) ผ่านไปแล้ว
 			// ตั้งแต่ก่อนวันที่รับไก่เข้าคอก แปลว่าไก่โตเกินเงื่อนไขนี้มาก่อนจะมาถึงฟาร์มเรา
 			// (น่าจะเคยได้รับวัคซีนตัวนี้จากที่อื่นมาแล้ว) จึงไม่ต้องขึ้นให้ฟาร์มนี้ต้องฉีดอีก
-			if windowEnd.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
+			if models.DateKey(windowEnd) < models.DateKey(coop.DateAdoptAnimals) {
 				continue
 			}
 
@@ -835,7 +835,7 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 			// (รับไก่เข้ามาตอนอายุอยู่กลางช่วงพอดี) ให้ถือว่าครบกำหนดตั้งแต่วันที่รับเข้าเลี้ยง
 			// เพราะฟาร์มเราเพิ่งมีไก่ตัวนี้ตอนนั้น ให้ฉีดได้ทันทีที่รับมา
 			dueDate := windowStart
-			if dueDate.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
+			if models.DateKey(dueDate) < models.DateKey(coop.DateAdoptAnimals) {
 				dueDate = coop.DateAdoptAnimals
 			}
 
@@ -844,7 +844,7 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 
 			alerts = append(alerts, CalendarAlertResponse{
 				ID:            alertID,
-				Date:          dueDate.Format("2006-01-02"),
+				Date:          models.DateKey(dueDate),
 				CoopID:        strconv.Itoa(coop.CoopID),
 				VaccineName:   schedule.Name,
 				InjectionType: schedule.Method,
@@ -914,7 +914,7 @@ func GetVaccineNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 🛑 ถ้าพรุ่งนี้ยังเป็นช่วงเวลาก่อนที่ไก่จะถูกนำเข้าเลี้ยง ก็ข้ามเล้านี้ไปเลย (เทียบ YYYY-MM-DD)
-		if tomorrow.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
+		if models.DateKey(tomorrow) < models.DateKey(coop.DateAdoptAnimals) {
 			continue
 		}
 
@@ -926,7 +926,7 @@ func GetVaccineNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 			// 🛑 กรอง: ถ้าช่วงอายุที่ควรให้วัคซีนนี้ (ถึง max_age_days) ผ่านไปหมดแล้ว
 			// ตั้งแต่ก่อนวันนำเข้าไก่ แปลว่าไก่โตเกินเงื่อนไขนี้มาก่อนถึงฟาร์มเรา ไม่ต้องแจ้งเตือน
 			windowEnd := coop.Birthday.AddDate(0, 0, schedule.MaxAgeDays)
-			if windowEnd.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
+			if models.DateKey(windowEnd) < models.DateKey(coop.DateAdoptAnimals) {
 				continue
 			}
 
