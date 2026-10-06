@@ -317,16 +317,23 @@ func AddCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	var req scheduleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// 🛑 กันชื่อยา/วัคซีนซ้ำ (ไม่สนตัวพิมพ์เล็ก-ใหญ่)
+	// 🛑 กันชื่อยา/วัคซีนซ้ำ (ไม่สนตัวพิมพ์เล็ก-ใหญ่) - เฉพาะในฟาร์ม (user) เดียวกัน
+	// เท่านั้น ฟาร์มอื่นตั้งชื่อซ้ำกันได้ เพราะเป็นคนละฟาร์มกัน
 	var existingCount int64
 	if err := database.DB.Model(&models.Vaccine{}).
-		Where("LOWER(name_vaccine) = LOWER(?)", req.Name).
+		Where("user_id = ? AND LOWER(name_vaccine) = LOWER(?)", userID, req.Name).
 		Count(&existingCount).Error; err != nil {
 		log.Printf("Failed to check duplicate medicine name: %v", err)
 		http.Error(w, "Failed to save medicine", http.StatusInternalServerError)
@@ -341,6 +348,7 @@ func AddCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vaccine := models.Vaccine{
+		UserID:     userID,
 		Name:       req.Name,
 		Method:     req.Method,
 		Note:       req.Description,
@@ -370,8 +378,14 @@ func GetMedicineSchedulesHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	var rows []models.Vaccine
-	if err := database.DB.Order("name_vaccine asc").Find(&rows).Error; err != nil {
+	if err := database.DB.Where("user_id = ?", userID).Order("name_vaccine asc").Find(&rows).Error; err != nil {
 		log.Printf("Failed to fetch medicine schedules: %v", err)
 		http.Error(w, "Failed to fetch medicine schedules", http.StatusInternalServerError)
 		return
@@ -437,7 +451,7 @@ func GetRecommendedVaccinesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = database.DB.Where("min_age_days <= ? AND max_age_days >= ?", ageInDays, ageInDays).Find(&recommendedRows).Error
+		err = database.DB.Where("user_id = ? AND min_age_days <= ? AND max_age_days >= ?", userID, ageInDays, ageInDays).Find(&recommendedRows).Error
 		if err != nil {
 			log.Printf("Failed to fetch medicines: %v", err)
 			http.Error(w, "Failed to fetch medicines", http.StatusInternalServerError)
@@ -460,7 +474,7 @@ func GetRecommendedVaccinesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var allRows []models.Vaccine
-	if err := database.DB.Find(&allRows).Error; err != nil {
+	if err := database.DB.Where("user_id = ?", userID).Find(&allRows).Error; err != nil {
 		log.Printf("Failed to fetch all schedules: %v", err)
 		http.Error(w, "Failed to fetch all schedules", http.StatusInternalServerError)
 		return
@@ -521,7 +535,7 @@ func GetVaccineMatchingCoopsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var schedule models.Vaccine
-	if err := database.DB.Where("vaccine_id = ?", scheduleID).First(&schedule).Error; err != nil {
+	if err := database.DB.Where("vaccine_id = ? AND user_id = ?", scheduleID, userID).First(&schedule).Error; err != nil {
 		log.Printf("[%s] %s - %d (Vaccine schedule not found: %v)", r.Method, r.RequestURI, http.StatusNotFound, err)
 		http.Error(w, "Vaccine schedule not found", http.StatusNotFound)
 		return
@@ -636,8 +650,9 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 		vaccineName := parts[1] // ดึงชื่อวัคซีนออกมา
 
 		// 🛑 ลบแถว "เกณฑ์/ประเภท" ในตาราง vaccine เอง เพื่อไม่ให้วัคซีนตัวนี้ไปแจ้งเตือน
-		// อีก - เป็นแถวกลาง (ไม่ผูกกับ user) จึงลบได้ตรงๆ
-		err := database.DB.Where("name_vaccine = ?", vaccineName).Delete(&models.Vaccine{}).Error
+		// อีก - จำกัดเฉพาะของ user ที่เรียกเท่านั้น กันไปลบประเภทวัคซีนชื่อเดียวกัน
+		// ของฟาร์มอื่นโดยไม่ได้ตั้งใจ
+		err := database.DB.Where("name_vaccine = ? AND user_id = ?", vaccineName, userID).Delete(&models.Vaccine{}).Error
 		if err != nil {
 			log.Printf("Failed to delete vaccine schedule: %v", err)
 			http.Error(w, "Failed to delete schedule", http.StatusInternalServerError)
@@ -777,7 +792,7 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var schedules []models.Vaccine
-	if err := database.DB.Find(&schedules).Error; err != nil {
+	if err := database.DB.Where("user_id = ?", userID).Find(&schedules).Error; err != nil {
 		log.Printf("[%s] %s - %d (Failed to retrieve schedules: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to retrieve schedules", http.StatusInternalServerError)
 		return
@@ -880,7 +895,7 @@ func GetVaccineNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var schedules []models.Vaccine
-	if err := database.DB.Find(&schedules).Error; err != nil {
+	if err := database.DB.Where("user_id = ?", userID).Find(&schedules).Error; err != nil {
 		http.Error(w, "Failed to retrieve schedules", http.StatusInternalServerError)
 		return
 	}
@@ -985,8 +1000,14 @@ func UpdateCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	
-	oldName := r.URL.Query().Get("old_name") 
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	oldName := r.URL.Query().Get("old_name")
 	if oldName == "" {
 		http.Error(w, "Missing old_name parameter", http.StatusBadRequest)
 		return
@@ -1010,8 +1031,8 @@ func UpdateCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 	// Log ดูค่าที่ส่งมาจาก Flutter เพื่อเช็คความชัวร์ใน Console ของ Go
 	log.Printf("📥 รับค่าแก้ไข: %s -> Name: %s, MinAge: %d, MaxAge: %d", oldName, body.Name, body.MinAgeDays, body.MaxAgeDays)
 
-	// 🌟 อัปเดตแถว "ประเภท" ในตาราง vaccine เอง
-	err := database.DB.Model(&models.Vaccine{}).Where("name_vaccine = ?", oldName).Updates(map[string]interface{}{
+	// 🌟 อัปเดตแถว "ประเภท" ในตาราง vaccine เอง - จำกัดเฉพาะของ user ที่เรียกเท่านั้น
+	err := database.DB.Model(&models.Vaccine{}).Where("name_vaccine = ? AND user_id = ?", oldName, userID).Updates(map[string]interface{}{
 		"name_vaccine": body.Name,
 		"method":       body.Method,
 		"min_age_days": body.MinAgeDays, // ส่งค่า int ตรงเข้าฐานข้อมูล
@@ -1026,11 +1047,15 @@ func UpdateCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 🌟 อัปเดตชื่อในตาราง vaccine_history (ประวัติให้จริงที่ผูกกับคอก) ด้วย เผื่อ
-	// ผู้ใช้แก้ไขชื่อวัคซีน ไม่ให้ชื่อในประวัติเก่าค้างเป็นชื่อเดิม
+	// ผู้ใช้แก้ไขชื่อวัคซีน ไม่ให้ชื่อในประวัติเก่าค้างเป็นชื่อเดิม - จำกัดเฉพาะคอก
+	// ของ user ที่เรียกเท่านั้น กันไปทับชื่อประวัติของฟาร์มอื่นที่บังเอิญตั้งชื่อ
+	// วัคซีนซ้ำกัน
 	if body.Name != oldName {
-		database.DB.Model(&models.VaccineHistory{}).Where("name_vaccine = ?", oldName).Updates(map[string]interface{}{
-			"name_vaccine": body.Name,
-		})
+		database.DB.Model(&models.VaccineHistory{}).
+			Where("name_vaccine = ? AND coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", oldName, userID).
+			Updates(map[string]interface{}{
+				"name_vaccine": body.Name,
+			})
 	}
 
 	w.WriteHeader(http.StatusOK)
