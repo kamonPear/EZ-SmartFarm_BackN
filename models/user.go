@@ -13,6 +13,12 @@ type User struct {
 	Password  string    `json:"-" gorm:"column:password;not null"`
 	CreatedAt time.Time `json:"created_at" gorm:"column:created_at"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"column:updated_at"`
+	// ให้ครั้งเดียวว่าเคยสร้างชนิดอุปกรณ์มาตรฐาน 7 แบบ (ESP32/MQ-135/ฯลฯ) ให้ user
+	// นี้เป็นแถวจริงใน device_type แล้วหรือยัง (ดู handlers.GetDeviceTypesHandler) -
+	// ต้องเป็น flag แยก เช็คแค่ "count(device_type) == 0" ไม่ได้ เพราะถ้า user ลบ
+	// ชนิดอุปกรณ์ทั้งหมดทิ้งจนเหลือ 0 แถว (ตั้งใจลบถาวร) จะโดน seed ของเดิมกลับมา
+	// ให้ใหม่ทุกครั้งที่เปิดหน้าซ้ำ ทั้งที่ควรลบถาวรจริงๆ ตามที่ผู้ใช้ขอ
+	DeviceTypesSeeded bool `json:"-" gorm:"column:device_types_seeded;not null;default:false"`
 }
 
 // บังคับให้ GORM รู้ว่าตารางนี้ใน Database ชื่อ "User" (ตรงกับที่คุณสร้าง)

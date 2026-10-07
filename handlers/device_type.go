@@ -18,6 +18,47 @@ type createDeviceTypeRequest struct {
 	Icon string `json:"icon"`
 }
 
+// defaultDeviceTypes คือชนิดอุปกรณ์มาตรฐาน 7 แบบ ให้ทุก user เป็นแถวจริงใน
+// device_type ของตัวเองครั้งแรกที่เปิดดู (ดู ensureDefaultDeviceTypes) ไอคอนตรงกับ
+// DEVICE_ICON_CHOICES ฝั่งเว็บ (src/app/shared/device-icon.util.ts) เป๊ะ - ตั้งใจ
+// ให้เป็นแถวจริงที่แก้ไข/ลบถาวรได้เหมือนชนิดที่ผู้ใช้เพิ่มเอง ไม่ใช่ค่าฝังตายตัวที่
+// ลบไม่ได้อีกต่อไป ตามที่ผู้ใช้ขอ
+var defaultDeviceTypes = []struct{ Name, Icon string }{
+	{"ESP 32", "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%232E9E4F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%226%22%20y%3D%226%22%20width%3D%2212%22%20height%3D%2212%22%20rx%3D%221.5%22%2F%3E%3Crect%20x%3D%229.5%22%20y%3D%229.5%22%20width%3D%225%22%20height%3D%225%22%2F%3E%3Cpath%20d%3D%22M9%202v3M15%202v3M9%2019v3M15%2019v3M2%209h3M2%2015h3M19%209h3M19%2015h3%22%2F%3E%3C%2Fsvg%3E"},
+	{"MQ-135", "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%232E9E4F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%208h11a3%203%200%201%200-3-3%22%2F%3E%3Cpath%20d%3D%22M3%2012h15a3%203%200%201%201-3%203%22%2F%3E%3Cpath%20d%3D%22M3%2016h8%22%2F%3E%3C%2Fsvg%3E"},
+	{"PIR MOTION", "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%232E9E4F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2218%22%20r%3D%221.3%22%20fill%3D%22%232E9E4F%22%20stroke%3D%22none%22%2F%3E%3Cpath%20d%3D%22M8.5%2014.5a5%205%200%200%201%207%200%22%2F%3E%3Cpath%20d%3D%22M5.5%2011.5a9%209%200%200%201%2013%200%22%2F%3E%3C%2Fsvg%3E"},
+	{"DHT22", "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%232E9E4F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10%2013.4V4.5a2%202%200%201%201%204%200v8.9a4%204%200%201%201-4%200Z%22%2F%3E%3Cline%20x1%3D%2212%22%20y1%3D%227%22%20x2%3D%2212%22%20y2%3D%2213.5%22%2F%3E%3C%2Fsvg%3E"},
+	{"MC-38", "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%232E9E4F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%222%22%20y%3D%229%22%20width%3D%227%22%20height%3D%226%22%20rx%3D%221.2%22%2F%3E%3Crect%20x%3D%2215%22%20y%3D%229%22%20width%3D%227%22%20height%3D%226%22%20rx%3D%221.2%22%2F%3E%3Cpath%20d%3D%22M9%2012h6%22%20stroke-dasharray%3D%222.2%202.2%22%2F%3E%3C%2Fsvg%3E"},
+	{"พัดลม", "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%232E9E4F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%221.4%22%20fill%3D%22%232E9E4F%22%20stroke%3D%22none%22%2F%3E%3Cpath%20d%3D%22M12%2012c0-3.2-2.2-5.2-5.2-5.2.1%203.2%202%205.2%205.2%205.2Z%22%2F%3E%3Cpath%20d%3D%22M12%2012c3.2%200%205.2-2.2%205.2-5.2-3.2.1-5.2%202-5.2%205.2Z%22%2F%3E%3Cpath%20d%3D%22M12%2012c0%203.2%202.2%205.2%205.2%205.2-.1-3.2-2-5.2-5.2-5.2Z%22%2F%3E%3Cpath%20d%3D%22M12%2012c-3.2%200-5.2%202.2-5.2%205.2%203.2-.1%205.2-2%205.2-5.2Z%22%2F%3E%3C%2Fsvg%3E"},
+	{"หลอดไฟ", "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%232E9E4F%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M9%2018h6%22%2F%3E%3Cpath%20d%3D%22M10%2022h4%22%2F%3E%3Cpath%20d%3D%22M12%202a7%207%200%200%200-4%2012.7c.6.5%201%201.3%201%202.1V17h6v-.2c0-.8.4-1.6%201-2.1A7%207%200%200%200%2012%202Z%22%2F%3E%3C%2Fsvg%3E"},
+}
+
+// ensureDefaultDeviceTypes สร้างชนิดอุปกรณ์มาตรฐาน 7 แบบให้ userID ครั้งแรกที่เปิด
+// ดูเท่านั้น (เช็คจาก User.DeviceTypesSeeded ไม่ใช่นับจำนวนแถว - ถ้า user ลบทิ้งจน
+// เหลือ 0 แถวในภายหลัง ต้องไม่ seed กลับมาให้ใหม่ เพราะถือว่าตั้งใจลบถาวรแล้ว)
+func ensureDefaultDeviceTypes(userID int) {
+	var user models.User
+	if err := database.DB.First(&user, userID).Error; err != nil {
+		log.Printf("Failed to load user for device type seeding: %v", err)
+		return
+	}
+	if user.DeviceTypesSeeded {
+		return
+	}
+
+	rows := make([]models.DeviceType, 0, len(defaultDeviceTypes))
+	for _, d := range defaultDeviceTypes {
+		rows = append(rows, models.DeviceType{UserID: userID, Name: d.Name, Icon: d.Icon})
+	}
+	if err := database.DB.Create(&rows).Error; err != nil {
+		log.Printf("Failed to seed default device types for user %d: %v", userID, err)
+		return
+	}
+	if err := database.DB.Model(&user).Update("device_types_seeded", true).Error; err != nil {
+		log.Printf("Failed to mark device types seeded for user %d: %v", userID, err)
+	}
+}
+
 // CreateDeviceTypeHandler เพิ่ม "ชนิด" อุปกรณ์ใหม่ (ชื่อ+ไอคอน) ไว้ใช้ซ้ำตอนจัดวาง
 // อุปกรณ์ลงคอก - เฉพาะในฟาร์ม (user) ของตัวเองเท่านั้น
 // POST /api/device-types
@@ -89,6 +130,8 @@ func GetDeviceTypesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+
+	ensureDefaultDeviceTypes(userID)
 
 	var rows []models.DeviceType
 	if err := database.DB.Where("user_id = ?", userID).Order("name asc").Find(&rows).Error; err != nil {
