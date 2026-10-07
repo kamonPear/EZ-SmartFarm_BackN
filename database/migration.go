@@ -75,7 +75,15 @@ func MigrateModels(db *gorm.DB) error {
 
 	// name_coop is a secondary key added alongside the existing id-based FKs.
 	// AutoMigrate doesn't manage this on its own, so add it explicitly and idempotently.
-	ensureUniqueIndex(db, "coop", "uq_coop_name_coop", "ALTER TABLE `coop` ADD UNIQUE KEY `uq_coop_name_coop` (`name_coop`)")
+	// ⛔ เดิมตั้งเป็น unique เดี่ยวๆ แค่ name_coop ทำให้ชื่อคอกต้องไม่ซ้ำกับ "ทุก
+	// farm ในระบบ" ทั้งที่ควรห้ามซ้ำแค่ภายใน farm (user) เดียวกันเท่านั้น - คนละ
+	// user ตั้งชื่อคอกซ้ำกันได้ตามที่ผู้ใช้ขอ จึงเปลี่ยนเป็น unique คู่ (user_id,
+	// name_coop) แทนด้านล่าง (หลัง ensureAdminBootstrapAndOwnership เติม user_id
+	// ให้ครบก่อน) - ใช้ dropAllUniqueIndexesOnColumn (ไม่ใช่ ensureIndexDropped ตัว
+	// เดียว) เพราะพบว่าคอลัมน์นี้มี unique index ซ้อนกันอยู่ 2 ตัวคนละชื่อในฐานจริง
+	// (uq_coop_name_coop ที่ตั้งชื่อเอง กับอีกตัวชื่อ name_coop ที่ GORM สร้างเองแต่
+	// ก่อน) ลบทีละชื่อจะตกหล่นตัวที่สอง
+	dropAllUniqueIndexesOnColumn(db, "coop", "name_coop")
 
 	// AutoMigrate above should now create these itself (coop_id is narrowed to INT before
 	// it runs), but add them explicitly too as a guarded fallback - matching the naming
@@ -122,6 +130,10 @@ func MigrateModels(db *gorm.DB) error {
 	if err := ensureAdminBootstrapAndOwnership(db); err != nil {
 		log.Printf("Warning: could not bootstrap admin/backfill ownership: %v", err)
 	}
+
+	// ชื่อคอกห้ามซ้ำแค่ภายใน farm (user) เดียวกัน - ทำหลัง ownership ด้านบน
+	// เพื่อให้ user_id ของทุกแถวถูกเติมครบแล้วก่อนสร้าง index คู่นี้
+	ensureUniqueIndex(db, "coop", "uq_coop_user_name", "ALTER TABLE `coop` ADD UNIQUE KEY `uq_coop_user_name` (`user_id`, `name_coop`)")
 
 	fmt.Println("✓ All tables migrated successfully")
 	return nil
