@@ -91,50 +91,26 @@ func GetFoodstockByType(foodType string, userID int) (*models.Foodstock, error) 
 	return &foodstock, nil
 }
 
-// EnsureFoodstockRows makes sure every known food type has a foodstock row for the
-// legacy/original data (no owner yet - gets backfilled onto the bootstrap admin user
-// by ensureAdminBootstrapAndOwnership during migration). Existing databases only ever
-// had a single untyped row (food_id=1) - its quantity is carried over onto the small
-// pellet type here, and the large pellet type starts at 0. New users get their own
-// per-type rows lazily (see addToFoodstock) the first time they import food.
+// EnsureFoodstockRows is a one-time migration that adopts the legacy pre-ownership
+// untyped row (food_id=1, no food_type, no owner) onto the small pellet type, back
+// when foodstock had no user_id FK yet (it gets backfilled onto the bootstrap admin
+// user by ensureAdminBootstrapAndOwnership right after this runs). That FK now exists
+// on every environment, so it's no longer safe to create an ownerless row here even
+// as a fallback - every user gets their own per-type rows lazily instead (see
+// addToFoodstock the first time they import food). If there's no legacy row left to
+// adopt (already migrated, or the table was cleared out), this is a no-op.
 func EnsureFoodstockRows() error {
 	var legacy models.Foodstock
 	hasLegacyRow := DB.Where("food_type = ? OR food_type IS NULL", "").First(&legacy).Error == nil
-
-	for _, foodType := range []string{models.FoodTypeSmallPellet, models.FoodTypeLargePellet} {
-		// Deliberately checks for ANY row of this food type (any owner), not just
-		// unowned ones - once the legacy row has been split into typed rows the first
-		// time, this must never fire again, otherwise every subsequent boot would try
-		// to insert another ownerless (user_id=0) row here, which the user_id FK added
-		// by ensureAdminBootstrapAndOwnership rejects. New users get their own rows
-		// lazily via addToFoodstock instead.
-		var count int64
-		if err := DB.Model(&models.Foodstock{}).Where("food_type = ?", foodType).Count(&count).Error; err != nil {
-			return err
-		}
-		if count > 0 {
-			continue
-		}
-
-		if hasLegacyRow && foodType == models.FoodTypeSmallPellet {
-			legacy.FoodType = foodType
-			if err := DB.Save(&legacy).Error; err != nil {
-				return err
-			}
-			log.Printf("✓ Migrated legacy foodstock row onto %s (%.2f kg)\n", foodType, legacy.QuantityCurrent)
-			continue
-		}
-
-		if err := DB.Create(&models.Foodstock{
-			FoodType:        foodType,
-			QuantityCurrent: 0,
-			DateUp:          time.Now(),
-		}).Error; err != nil {
-			return err
-		}
-		log.Printf("✓ Created foodstock row for %s\n", foodType)
+	if !hasLegacyRow {
+		return nil
 	}
 
+	legacy.FoodType = models.FoodTypeSmallPellet
+	if err := DB.Save(&legacy).Error; err != nil {
+		return err
+	}
+	log.Printf("✓ Migrated legacy foodstock row onto %s (%.2f kg)\n", models.FoodTypeSmallPellet, legacy.QuantityCurrent)
 	return nil
 }
 
