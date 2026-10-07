@@ -728,6 +728,22 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 			var count int64
 			database.DB.Model(&models.VaccineHistory{}).Where("coop_id = ? AND name_vaccine = ?", coopID, vaccineName).Count(&count)
 			if count == 0 {
+				// 🛑 ห้ามกด "สำเร็จแล้ว" ก่อนถึงวันครบกำหนดจริง (เดิมไม่เช็คเลย กด
+				// ได้ทุกเมื่อแม้ยังไม่ถึงวันที่ควรให้จริงๆ) - คำนวณวันครบกำหนดแบบ
+				// เดียวกับ GET /api/vaccines/alerts (ดู GetVaccineCalendarAlertsHandler
+				// ด้านล่าง) ย้อนกลับมาเช็คเฉยๆ ไม่กระทบแถวที่กดสำเร็จไปแล้วก่อนหน้า
+				var schedule models.Vaccine
+				if err := database.DB.Where("name_vaccine = ? AND user_id = ?", vaccineName, userID).First(&schedule).Error; err == nil {
+					dueDate := coop.Birthday.AddDate(0, 0, schedule.MinAgeDays)
+					if models.DateKey(dueDate) < models.DateKey(coop.DateAdoptAnimals) {
+						dueDate = coop.DateAdoptAnimals
+					}
+					if models.DateKey(time.Now()) < models.DateKey(dueDate) {
+						http.Error(w, "ยังไม่ถึงวันครบกำหนดให้วัคซีนนี้ กดสำเร็จก่อนไม่ได้", http.StatusBadRequest)
+						return
+					}
+				}
+
 				// Birthday ต้องเป็นวันเกิดไก่จริงของคอกนี้ (เหมือนที่ CreateVaccine
 				// ในวาซีนrepository ทำ) ไม่ใช่เวลาปัจจุบันตอนกดให้วัคซีน - ของเดิมใส่
 				// &now ผิด ทำให้ birthday ของประวัติวัคซีนคลาดเคลื่อนจากวันเกิดจริง
