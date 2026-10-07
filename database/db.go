@@ -3,12 +3,15 @@ package database
 import (
 	"fmt"
 	"log"
+	"os"
+	"time"
 
 	"EZ-SmartFarm_BachN/config"
 	"EZ-SmartFarm_BachN/models" // 🌟 1. เพิ่ม import models เข้ามาเพื่อให้ไฟล์นี้รู้จักโครงสร้างตาราง
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var DB *gorm.DB
@@ -17,7 +20,21 @@ func InitDatabase(cfg config.DatabaseConfig) error {
 	dsn := cfg.GetDSN()
 	log.Printf("DEBUG: connecting to host=%s port=%s db=%s user=%s", cfg.Host, cfg.Port, cfg.Database, cfg.User)
 
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	// IgnoreRecordNotFoundError: true - หลายที่ใน repository layer (เช่น
+	// GetFarmThreshold, farm_layout) ใช้ "record not found" เป็นสถานะปกติ
+	// (ผู้ใช้ยังไม่เคยตั้งค่า ไม่ใช่ error จริง) ค่า default ของ GORM log ระดับ
+	// Error/สีแดงทุกครั้งที่เจอ ทำให้ log บน Render ดูเหมือนมีบั๊กทั้งที่ไม่มี
+	gormLogger := logger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  false,
+		},
+	)
+
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{Logger: gormLogger})
 	if err != nil {
 		log.Printf("Failed to connect to database: %v", err)
 		return err
