@@ -52,6 +52,10 @@ func CreateHealthHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Coop not found", http.StatusNotFound)
 			return
 		}
+		if database.IsDuplicateHealthDate(err) {
+			http.Error(w, "Health record for this coop and date already exists", http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

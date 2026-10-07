@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/models"
@@ -134,6 +135,12 @@ func MigrateModels(db *gorm.DB) error {
 	// ชื่อคอกห้ามซ้ำแค่ภายใน farm (user) เดียวกัน - ทำหลัง ownership ด้านบน
 	// เพื่อให้ user_id ของทุกแถวถูกเติมครบแล้วก่อนสร้าง index คู่นี้
 	ensureUniqueIndex(db, "coop", "uq_coop_user_name", "ALTER TABLE `coop` ADD UNIQUE KEY `uq_coop_user_name` (`user_id`, `name_coop`)")
+
+	// ผลตรวจสุขภาพห้ามมีมากกว่า 1 แถวต่อคอกต่อวัน (เดิมไม่มีการกันเลย ยิง POST
+	// /api/healths ซ้ำกี่ครั้งก็สร้างแถวใหม่ได้เรื่อยๆ - ต้องเคลียร์แถวซ้ำที่มีอยู่
+	// แล้วในฐานก่อน ไม่งั้น ALTER TABLE ด้านล่างจะชนแล้วไม่ถูกสร้างแบบเงียบๆ)
+	dedupeHealthRecords(db)
+	ensureUniqueIndex(db, "health", "uq_health_coop_date", "ALTER TABLE `health` ADD UNIQUE KEY `uq_health_coop_date` (`coop_id`, `date`)")
 
 	fmt.Println("✓ All tables migrated successfully")
 	return nil
@@ -293,6 +300,44 @@ func ensureUniqueIndex(db *gorm.DB, table, indexName, ddl string) {
 	}
 	if err := db.Exec(ddl).Error; err != nil {
 		log.Printf("Warning: could not add unique index %s: %v", indexName, err)
+	}
+}
+
+// dedupeHealthRecords ลบแถวผลตรวจสุขภาพที่ซ้ำกัน (coop_id, date เดียวกัน) เหลือ
+// ไว้แค่แถวล่าสุด (health_id สูงสุด = insert ล่าสุด) ก่อนเพิ่ม uq_health_coop_date
+// ด้านบนใน MigrateModels - ถ้าไม่ทำก่อน ALTER TABLE จะชนกับข้อมูลซ้ำที่มีอยู่แล้ว
+// แล้วถูกข้ามแบบเงียบๆ (ensureUniqueIndex แค่ log warning ไม่ throw) ทำให้ไม่มีอะไร
+// กันการบันทึกซ้ำได้จริงสักที แม้จะรัน migration นี้ไปแล้วก็ตาม
+func dedupeHealthRecords(db *gorm.DB) {
+	type dupGroup struct {
+		CoopID int
+		Date   time.Time
+	}
+	var groups []dupGroup
+	if err := db.Raw(
+		"SELECT coop_id, date FROM health GROUP BY coop_id, date HAVING COUNT(*) > 1",
+	).Scan(&groups).Error; err != nil {
+		log.Printf("Warning: could not check for duplicate health records: %v", err)
+		return
+	}
+	for _, g := range groups {
+		var keepID int
+		if err := db.Raw(
+			"SELECT health_id FROM health WHERE coop_id = ? AND date = ? ORDER BY health_id DESC LIMIT 1",
+			g.CoopID, g.Date,
+		).Scan(&keepID).Error; err != nil {
+			log.Printf("Warning: could not pick row to keep for coop %d date %v: %v", g.CoopID, g.Date, err)
+			continue
+		}
+		res := db.Exec(
+			"DELETE FROM health WHERE coop_id = ? AND date = ? AND health_id != ?",
+			g.CoopID, g.Date, keepID,
+		)
+		if res.Error != nil {
+			log.Printf("Warning: could not delete duplicate health records for coop %d date %v: %v", g.CoopID, g.Date, res.Error)
+			continue
+		}
+		log.Printf("Dedup: removed %d duplicate health record(s) for coop_id=%d date=%v (kept health_id=%d)", res.RowsAffected, g.CoopID, g.Date, keepID)
 	}
 }
 
