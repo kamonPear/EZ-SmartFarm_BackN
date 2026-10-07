@@ -61,6 +61,7 @@ func MigrateModels(db *gorm.DB) error {
 		&models.VaccineHistory{},
 		&models.HealthAppointment{},
 		&models.FarmThreshold{},
+		&models.DeviceType{},
 	); err != nil {
 		// AutoMigrate can fail partway through (e.g. a pre-existing FK type mismatch on
 		// egg/vaccine.coop_id) while still having fully migrated earlier models in the list.
@@ -148,10 +149,10 @@ func MigrateModels(db *gorm.DB) error {
 
 // ownedTables lists every "root" entity table that got a user_id column added for the
 // per-user data ownership feature (auth). Coop/Foodstock/ImportFood/FoodDistribution/
-// FarmLayout/Vaccine each own their data directly; Egg/Health/VaccineHistory/Device are
-// scoped indirectly through their parent coop instead (see database.CoopBelongsToUser)
-// and so don't need a column or FK of their own here.
-var ownedTables = []string{"coop", "foodstock", "importfood", "food_distribution", "farm_layout", "vaccine"}
+// FarmLayout/Vaccine/DeviceType each own their data directly; Egg/Health/
+// VaccineHistory/Device are scoped indirectly through their parent coop instead (see
+// database.CoopBelongsToUser) and so don't need a column or FK of their own here.
+var ownedTables = []string{"coop", "foodstock", "importfood", "food_distribution", "farm_layout", "vaccine", "device_type"}
 
 // ensureAdminBootstrapAndOwnership is the one-time (but safe-to-rerun) migration step
 // that turns on per-user data ownership on a database that predates it:

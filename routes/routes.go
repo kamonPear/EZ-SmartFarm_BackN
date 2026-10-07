@@ -121,6 +121,11 @@ func SetupRoutes(db *gorm.DB) {
 	rg.PUT("/api/devices", auth.RequireAuth(handlers.UpdateDeviceHandler))
 	rg.DELETE("/api/devices", auth.RequireAuth(handlers.DeleteDeviceHandler))
 
+	// Device types - ชนิดอุปกรณ์ที่ผู้ใช้เพิ่มเอง (ชื่อ+ไอคอน) ไว้เลือกใช้ซ้ำตอน
+	// จัดวางอุปกรณ์ลงคอก แยกจาก Device ซึ่งเป็นอุปกรณ์ที่ถูกวางจริงแล้ว
+	rg.POST("/api/device-types", auth.RequireAuth(handlers.CreateDeviceTypeHandler))
+	rg.GET("/api/device-types", auth.RequireAuth(handlers.GetDeviceTypesHandler))
+
 	// Sensors - IoT device ingestion, no user JWT available in the field, stays public
 	rg.POST("/api/sensor-logs", handlers.ReceiveSensorDataHandler)
 	rg.POST("/api/sensor/upload", handlers.HandleArduinoUpload(db))
