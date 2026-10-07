@@ -75,6 +75,13 @@ func MigrateModels(db *gorm.DB) error {
 		log.Printf("Warning: Could not re-enable foreign key checks: %v", err)
 	}
 
+	// device_type.icon was originally created as VARCHAR(255) by AutoMigrate (its
+	// mapping before the struct tag changed to `text`) - SVG data: URI icons run
+	// 500+ characters, so every INSERT into this column was silently rejected by
+	// MySQL strict mode (including handlers.ensureDefaultDeviceTypes seeding the 7
+	// standard types for every user - it never once succeeded because of this).
+	ensureColumnIsText(db, "device_type", "icon")
+
 	// name_coop is a secondary key added alongside the existing id-based FKs.
 	// AutoMigrate doesn't manage this on its own, so add it explicitly and idempotently.
 	// ⛔ เดิมตั้งเป็น unique เดี่ยวๆ แค่ name_coop ทำให้ชื่อคอกต้องไม่ซ้ำกับ "ทุก
@@ -384,6 +391,27 @@ func ensureColumnIsInt(db *gorm.DB, table, column string, nullable bool) {
 	}
 	if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` INT %s", table, column, nullClause)).Error; err != nil {
 		log.Printf("Warning: could not narrow column %s.%s to INT: %v", table, column, err)
+	}
+}
+
+// ensureColumnIsText widens column on table to TEXT if it's still the old VARCHAR(255)
+// GORM's AutoMigrate originally created (AutoMigrate adds missing columns but doesn't
+// retroactively widen an already-existing one when the struct tag changes). A no-op
+// once the column is already text/mediumtext/longtext.
+func ensureColumnIsText(db *gorm.DB, table, column string) {
+	var dataType string
+	if err := db.Raw(
+		"SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+		table, column,
+	).Scan(&dataType).Error; err != nil {
+		log.Printf("Warning: could not check column type %s.%s: %v", table, column, err)
+		return
+	}
+	if dataType == "" || strings.Contains(dataType, "text") {
+		return
+	}
+	if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` TEXT NOT NULL", table, column)).Error; err != nil {
+		log.Printf("Warning: could not widen column %s.%s to TEXT: %v", table, column, err)
 	}
 }
 
