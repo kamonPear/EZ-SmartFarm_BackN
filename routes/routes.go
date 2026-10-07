@@ -125,6 +125,8 @@ func SetupRoutes(db *gorm.DB) {
 	// จัดวางอุปกรณ์ลงคอก แยกจาก Device ซึ่งเป็นอุปกรณ์ที่ถูกวางจริงแล้ว
 	rg.POST("/api/device-types", auth.RequireAuth(handlers.CreateDeviceTypeHandler))
 	rg.GET("/api/device-types", auth.RequireAuth(handlers.GetDeviceTypesHandler))
+	rg.PUT("/api/device-types", auth.RequireAuth(handlers.UpdateDeviceTypeHandler))
+	rg.DELETE("/api/device-types", auth.RequireAuth(handlers.DeleteDeviceTypeHandler))
 
 	// Sensors - IoT device ingestion, no user JWT available in the field, stays public
 	rg.POST("/api/sensor-logs", handlers.ReceiveSensorDataHandler)
