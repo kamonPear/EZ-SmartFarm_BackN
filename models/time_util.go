@@ -18,3 +18,10 @@ var bangkokLoc = time.FixedZone("ICT", 7*60*60)
 func DateKey(t time.Time) string {
 	return t.In(bangkokLoc).Format("2006-01-02")
 }
+
+// BangkokLocation returns the fixed UTC+7 location this package uses, for callers (e.g.
+// scheduler.SetupJobs) that need to schedule something at a specific wall-clock hour in
+// Thailand regardless of what timezone the server process itself happens to run in.
+func BangkokLocation() *time.Location {
+	return bangkokLoc
+}

@@ -11,8 +11,11 @@ import (
 
 // SetupJobs สำหรับตั้งเวลาการทำงานอัตโนมัติ
 func SetupJobs() {
-	// สร้าง cron instance
-	c := cron.New()
+	// สร้าง cron instance - ต้องระบุ location เป็นเวลาไทยตรงๆ (models.BangkokLocation)
+	// ไม่งั้น cron จะยึดตามเวลา local ของ "เครื่อง/container ที่รันโปรเซส" ซึ่งบน
+	// Render คือ UTC ไม่ใช่เวลาไทย ทำให้ "0 6 * * *" ที่ตั้งใจไว้ว่าคือ 6 โมงเช้าไทย
+	// กลายเป็นทำงานจริงตอนบ่าย 1 (06:00 UTC = 13:00 ICT) แทน
+	c := cron.New(cron.WithLocation(models.BangkokLocation()))
 
 	// ตั้งเวลา: ทำงานทุกวัน เวลา 06:00 น. (6 โมงเช้า)
 	// เปลี่ยนเป็น "* * * * *" ถ้าต้องการทดสอบให้ทำงานทุกๆ 1 นาที

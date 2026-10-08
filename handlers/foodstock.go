@@ -70,6 +70,8 @@ func GetAllFoodstocksHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	RunCatchUpDeduction(userID)
+
 	foodstocks, err := database.GetAllFoodstocks(userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to fetch foodstocks: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
@@ -258,6 +260,52 @@ func ComputeDailyFoodConsumption(coops []models.Coop, foodType string) float64 {
 		total += item.KgGiven
 	}
 	return total
+}
+
+// RunCatchUpDeduction ตรวจว่า userID ถูกตัดสต็อกอาหารประจำวันของวันนี้ (ตามปฏิทินไทย)
+// ไปแล้วหรือยัง ถ้ายัง ตัดให้ทันที - มีฟังก์ชันนี้เพราะ cron ตอน 6 โมงเช้า
+// (scheduler.SetupJobs) ทำงานได้ก็ต่อเมื่อตัวโปรเซสเซิร์ฟเวอร์ "มีชีวิตอยู่" ณ
+// วินาทีนั้นจริงๆ แต่ Render แพลนฟรีจะพักโปรเซสทิ้งหลังไม่มีคนใช้ ~15 นาที แล้วจะตื่น
+// ขึ้นมาใหม่ก็ต่อเมื่อมี request เข้ามาเท่านั้น - ถ้าทั้งคืนไม่มีใครเปิดแอปเลย ตัวโปรเซส
+// อาจไม่ได้ทำงานอยู่ตอน 06:00 น. พอดี ทำให้ cron ที่ตั้งไว้ไม่มีโอกาสได้รันเลยสักครั้ง
+// โดยไม่มี error ให้เห็นที่ไหนเลย เรียกฟังก์ชันนี้ตอนเปิดหน้าคลังอาหาร (ซึ่งเป็น
+// request ที่ปลุกเซิร์ฟเวอร์ขึ้นมาแน่ๆ) เพื่อให้มีจุดสำรองที่ตัดสต็อกให้ได้ทุกวัน
+// ตราบใดที่ผู้ใช้เปิดแอปอย่างน้อยวันละครั้ง
+func RunCatchUpDeduction(userID int) {
+	coops, err := database.GetAllCoops(userID)
+	if err != nil {
+		log.Printf("❌ [CatchUp] ดึงข้อมูลคอกของ user %d ล้มเหลว: %v\n", userID, err)
+		return
+	}
+
+	for _, foodType := range []string{models.FoodTypeSmallPellet, models.FoodTypeLargePellet} {
+		lastDate, found, err := database.GetLatestDistributionDate(userID, foodType)
+		if err != nil {
+			log.Printf("❌ [CatchUp] ตรวจสอบวันตัดสต็อกล่าสุดของ user %d ล้มเหลว: %v\n", userID, err)
+			continue
+		}
+		if found && models.DateKey(lastDate) == models.DateKey(time.Now()) {
+			continue // ตัดไปแล้ววันนี้ (จาก cron หรือเปิดหน้านี้รอบก่อนของวันเดียวกัน)
+		}
+
+		items := ComputeDailyFoodConsumptionByCoop(coops, foodType)
+		var amount float64
+		for _, item := range items {
+			amount += item.KgGiven
+		}
+		if amount <= 0 {
+			continue // ไม่มีคอกไหนกำลังกินอาหารประเภทนี้อยู่
+		}
+
+		if err := database.DeductFoodstockByType(foodType, userID, amount); err != nil {
+			log.Printf("❌ [CatchUp] ตัดสต็อก %s ของ user %d ล้มเหลว: %v\n", foodType, userID, err)
+			continue
+		}
+		if _, err := database.CreateFoodDistributionBatch(foodType, items, userID); err != nil {
+			log.Printf("❌ [CatchUp] บันทึก breakdown ของ user %d ล้มเหลว (ตัดสต็อกไปแล้ว): %v\n", userID, err)
+		}
+		log.Printf("✅ [CatchUp] ตัดสต็อก %s %.2f กก. ให้ user %d แทน Cron ที่พลาดไป\n", foodType, amount, userID)
+	}
 }
 
 // ForceDeductStockHandler อนุญาตให้เรียก API เพื่อตัดสต็อกแบบแมนนวล ต้องระบุประเภทอาหารก่อนตัดเสมอ
