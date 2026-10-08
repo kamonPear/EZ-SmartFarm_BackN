@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -77,7 +78,23 @@ func RecordFoodDistributionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.DeductFoodstockByType(req.FoodType, userID, total); err != nil {
+	// เช็คก่อนว่าสต็อกจริงมีพอไหม แล้วปฏิเสธถ้าไม่พอ แทนที่จะปล่อยให้ตัดแค่เท่าที่มี
+	// เงียบๆ - ตรงนี้เป็นยอดที่ผู้ใช้ "กรอกเองตรงๆ" ว่าให้อาหารคอกไหนไปเท่าไรจริง
+	// ถ้าระบบรับไว้ทั้งที่สต็อกไม่พอจะได้ตัวเลขที่ไม่ตรงความจริง (อ้างว่าให้ไปแล้ว
+	// มากกว่าที่มีอยู่จริง) ผู้ใช้ควรรู้ทันทีว่าต้องเติมสต็อกก่อน ไม่ใช่มาเจอทีหลัง
+	currentQty, found, err := database.GetFoodstockQuantity(userID, req.FoodType)
+	if err != nil {
+		log.Printf("[%s] %s - %d (Failed to check stock: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
+		http.Error(w, "Failed to check stock", http.StatusInternalServerError)
+		return
+	}
+	if !found || currentQty < total {
+		log.Printf("[%s] %s - %d (Insufficient stock: have %.2f, need %.2f)", r.Method, r.RequestURI, http.StatusBadRequest, currentQty, total)
+		http.Error(w, fmt.Sprintf("สต็อกอาหาร%sเหลือไม่พอ มีอยู่ %.2f กก. แต่กรอกรวม %.2f กก. กรุณาเติมสต็อกก่อน", req.FoodType, currentQty, total), http.StatusBadRequest)
+		return
+	}
+
+	if _, _, err := database.DeductFoodstockByType(req.FoodType, userID, total); err != nil {
 		log.Printf("[%s] %s - %d (Failed to deduct stock: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to deduct stock", http.StatusInternalServerError)
 		return

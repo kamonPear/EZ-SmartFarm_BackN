@@ -284,11 +284,19 @@ func RunDailyDeductionForAllUsers() (deductedUsers int, err error) {
 			if amount <= 0 {
 				continue // ไม่มีคอกไหนของผู้ใช้นี้กำลังกินอาหารประเภทนี้อยู่
 			}
-			if err := database.DeductFoodstockByType(foodType, userID, amount); err != nil {
+			deducted, shortfall, err := database.DeductFoodstockByType(foodType, userID, amount)
+			if err != nil {
 				log.Printf("❌ [Food] ตัดสต็อก %s ของผู้ใช้ %d ล้มเหลว: %v\n", foodType, userID, err)
 				continue
 			}
-			if _, err := database.CreateFoodDistributionBatch(foodType, items, userID); err != nil {
+			if shortfall > 0 {
+				log.Printf("⚠️ [Food] สต็อก %s ของผู้ใช้ %d ไม่พอ ต้องการ %.2f kg ตัดได้จริง %.2f kg (ขาด %.2f kg)\n", foodType, userID, amount, deducted, shortfall)
+			}
+			breakdownItems := items
+			if deducted < amount {
+				breakdownItems = scaleDistributionItems(items, deducted/amount)
+			}
+			if _, err := database.CreateFoodDistributionBatch(foodType, breakdownItems, userID); err != nil {
 				log.Printf("❌ [Food] บันทึก breakdown ของผู้ใช้ %d ล้มเหลว (ตัดสต็อกไปแล้ว): %v\n", userID, err)
 			}
 			userDeducted = true
@@ -367,14 +375,22 @@ func RunCatchUpDeduction(userID int) {
 			continue // ไม่มีคอกไหนกำลังกินอาหารประเภทนี้อยู่
 		}
 
-		if err := database.DeductFoodstockByType(foodType, userID, amount); err != nil {
+		deducted, shortfall, err := database.DeductFoodstockByType(foodType, userID, amount)
+		if err != nil {
 			log.Printf("❌ [CatchUp] ตัดสต็อก %s ของ user %d ล้มเหลว: %v\n", foodType, userID, err)
 			continue
 		}
-		if _, err := database.CreateFoodDistributionBatch(foodType, items, userID); err != nil {
+		if shortfall > 0 {
+			log.Printf("⚠️ [CatchUp] สต็อก %s ของ user %d ไม่พอ ต้องการ %.2f kg ตัดได้จริง %.2f kg (ขาด %.2f kg)\n", foodType, userID, amount, deducted, shortfall)
+		}
+		breakdownItems := items
+		if deducted < amount {
+			breakdownItems = scaleDistributionItems(items, deducted/amount)
+		}
+		if _, err := database.CreateFoodDistributionBatch(foodType, breakdownItems, userID); err != nil {
 			log.Printf("❌ [CatchUp] บันทึก breakdown ของ user %d ล้มเหลว (ตัดสต็อกไปแล้ว): %v\n", userID, err)
 		}
-		log.Printf("✅ [CatchUp] ตัดสต็อก %s %.2f กก. ให้ user %d แทน Cron ที่พลาดไป\n", foodType, amount, userID)
+		log.Printf("✅ [CatchUp] ตัดสต็อก %s %.2f กก. ให้ user %d แทน Cron ที่พลาดไป\n", foodType, deducted, userID)
 	}
 }
 
@@ -432,7 +448,8 @@ func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.DeductFoodstockByType(req.FoodType, userID, amount); err != nil {
+	deducted, shortfall, err := database.DeductFoodstockByType(req.FoodType, userID, amount)
+	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to deduct stock: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to deduct stock", http.StatusInternalServerError)
 		return
@@ -440,17 +457,46 @@ func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 
 	// บันทึก breakdown รายคอกไว้ด้วย (เหมือนตอนกรอกเองสมัยก่อน) ให้หน้า "สรุปผล
 	// อาหารแต่ละประเภท" ยังเห็นว่าคอกไหนกินไปเท่าไรได้ แม้ตัดสต็อกแบบไม่กรอกเอง -
-	// สต็อกถูกตัดสำเร็จไปแล้วข้างบน พลาดตรงนี้แค่ log ไว้ ไม่ทำให้ทั้งคำขอ fail
-	if _, err := database.CreateFoodDistributionBatch(req.FoodType, items, userID); err != nil {
+	// ย่อยอดตามสัดส่วนถ้าตัดได้จริงน้อยกว่าที่ขอ (สต็อกไม่พอ) ให้ผลรวม breakdown
+	// ตรงกับยอดที่ตัดจริง ไม่ใช่ยอดที่ขอซึ่งอาจเกินกว่าที่มีจริง - สต็อกถูกตัดสำเร็จ
+	// ไปแล้วข้างบน พลาดตรงนี้แค่ log ไว้ ไม่ทำให้ทั้งคำขอ fail
+	breakdownItems := items
+	if deducted < amount {
+		breakdownItems = scaleDistributionItems(items, deducted/amount)
+	}
+	if _, err := database.CreateFoodDistributionBatch(req.FoodType, breakdownItems, userID); err != nil {
 		log.Printf("[%s] %s - (บันทึก breakdown รายคอกไม่สำเร็จ แต่ตัดสต็อกไปแล้ว: %v)", r.Method, r.RequestURI, err)
+	}
+
+	// ขอตัดเท่าไร อาจไม่ใช่ที่ตัดได้จริงเสมอไป (สต็อกเหลือน้อยกว่าที่ต้องการ) -
+	// ข้อความต้องสะท้อนยอดที่ตัดได้จริงเท่านั้น ไม่ใช่ยอดที่ขอ ไม่งั้นจะเจอแบบ
+	// "เหลือ 4 กก. แต่ระบบบอกว่าหักได้ 15 กก. สำเร็จ" ซึ่งเป็นเท็จ
+	message := fmt.Sprintf("หักสต็อกอาหาร%s %.2f กิโลกรัม สำเร็จ", req.FoodType, deducted)
+	if shortfall > 0 {
+		message = fmt.Sprintf(
+			"สต็อกอาหาร%sเหลือไม่พอ หักได้จริง %.2f กิโลกรัม (ต้องการ %.2f กก. ขาดอีก %.2f กก. กรุณาเติมสต็อก)",
+			req.FoodType, deducted, amount, shortfall,
+		)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	log.Printf("[%s] %s - %d ✓ ตัดสต็อก %s %.2f กก. เรียบร้อยแล้ว", r.Method, r.RequestURI, http.StatusOK, req.FoodType, amount)
+	log.Printf("[%s] %s - %d ✓ %s", r.Method, r.RequestURI, http.StatusOK, message)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message":   fmt.Sprintf("หักสต็อกอาหาร%s %.2f กิโลกรัม สำเร็จ", req.FoodType, amount),
+		"message":   message,
 		"food_type": req.FoodType,
-		"deducted":  amount,
+		"deducted":  deducted,
+		"shortfall": shortfall,
 	})
+}
+
+// scaleDistributionItems ย่อยอด KgGiven ของแต่ละคอกลงตามสัดส่วน scale (0-1) ใช้ตอน
+// ตัดสต็อกได้จริงน้อยกว่าที่ขอ (สต็อกไม่พอ) เพื่อให้ผลรวมของ breakdown ที่บันทึกตรง
+// กับยอดที่ตัดจริงจากสต็อก ไม่ใช่ยอด "ที่ควรจะได้" ซึ่งเกินกว่าที่มีอยู่จริง
+func scaleDistributionItems(items []models.FoodDistributionItem, scale float64) []models.FoodDistributionItem {
+	scaled := make([]models.FoodDistributionItem, len(items))
+	for i, it := range items {
+		scaled[i] = models.FoodDistributionItem{CoopID: it.CoopID, KgGiven: it.KgGiven * scale}
+	}
+	return scaled
 }
