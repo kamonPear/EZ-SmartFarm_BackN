@@ -10,7 +10,7 @@ type Device struct {
     NameCoop      string      `gorm:"column:name_coop;type:varchar(100);index" json:"name_coop"`
     SlotIndex     int32       `gorm:"column:slot_index;type:int;not null" json:"slot_index"`
     Name          string      `gorm:"column:name;type:varchar(100);index" json:"name"`
-    Icon          string      `gorm:"column:icon;type:varchar(255)" json:"icon"`            
+    Icon          string      `gorm:"column:icon;type:text" json:"icon"`            
     DeviceType    string      `gorm:"column:device_type;type:varchar(50)" json:"device_type"`
     CurrentStatus string      `gorm:"column:current_status;type:varchar(20);default:'Offline'" json:"current_status"`
     LastUpdate    time.Time   `gorm:"column:last_update" json:"last_update"`

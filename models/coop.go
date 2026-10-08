@@ -6,7 +6,7 @@ import "time"
 type Coop struct {
 	CoopID           int       `gorm:"primaryKey;autoIncrement;column:coop_id;type:int" json:"coop_id"`
 	UserID           int       `gorm:"column:user_id;type:int;size:32;index" json:"user_id"`
-	NameCoop         string    `gorm:"column:name_coop;type:varchar(100);unique" json:"name_coop"`
+	NameCoop         string    `gorm:"column:name_coop;type:varchar(100)" json:"name_coop"` // ไม่ซ้ำ "ต่อผู้ใช้" - ดู uq_coop_user_name_coop ใน migration (ไม่ใช่ unique ทั้งระบบ)
 	DateAdoptAnimals time.Time `gorm:"column:date_adopt_animals" json:"date_adopt_animals"`
 	Amount           int       `gorm:"column:amount" json:"amount"`
 	Birthday         time.Time `gorm:"index:idx_coop_birthday" json:"birthday"`

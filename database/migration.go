@@ -73,9 +73,15 @@ func MigrateModels(db *gorm.DB) error {
 		log.Printf("Warning: Could not re-enable foreign key checks: %v", err)
 	}
 
-	// name_coop is a secondary key added alongside the existing id-based FKs.
-	// AutoMigrate doesn't manage this on its own, so add it explicitly and idempotently.
-	ensureUniqueIndex(db, "coop", "uq_coop_name_coop", "ALTER TABLE `coop` ADD UNIQUE KEY `uq_coop_name_coop` (`name_coop`)")
+	// Coop names must be unique per user, not across the whole system: two different users
+	// can legitimately both name a coop "test". The old system-wide unique indexes
+	// (uq_coop_name_coop, and the bare `name_coop` one from the former `unique` gorm tag)
+	// made the second user's coop collide - and made startup log "Duplicate entry" errors
+	// once such rows existed. Drop them and add the per-user one explicitly and idempotently
+	// (AutoMigrate doesn't manage this composite index on its own).
+	ensureIndexDropped(db, "coop", "uq_coop_name_coop")
+	ensureIndexDropped(db, "coop", "name_coop")
+	ensureUniqueIndex(db, "coop", "uq_coop_user_name_coop", "ALTER TABLE `coop` ADD UNIQUE KEY `uq_coop_user_name_coop` (`user_id`, `name_coop`)")
 
 	// AutoMigrate above should now create these itself (coop_id is narrowed to INT before
 	// it runs), but add them explicitly too as a guarded fallback - matching the naming

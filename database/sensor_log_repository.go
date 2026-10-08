@@ -109,7 +109,10 @@ func GetMotionAlertsForUser(userID int, since time.Time) ([]MotionAlertRow, erro
 	}
 
 	var logs []models.SensorLog
-	if err := DB.Where("device_id IN ? AND timestamp >= ?", deviceIDs, since).
+	// value > 0 เท่านั้น: sensor_log เป็นแถวเดียวต่อเซนเซอร์ที่ถูกเขียนทับทุกครั้งที่บอร์ดส่งค่า
+	// (รวมค่า 0 = ไม่พบ) ถ้าไม่กรอง ค่า 0 จะถูกนับเป็น "ตรวจพบ" และ timestamp ที่ต่ออายุเอง
+	// ทุกรอบทำให้แจ้งเตือนกลับมาทันทีหลังกดรับทราบ
+	if err := DB.Where("device_id IN ? AND timestamp >= ? AND value > 0", deviceIDs, since).
 		Order("timestamp desc").
 		Find(&logs).Error; err != nil {
 		return nil, err

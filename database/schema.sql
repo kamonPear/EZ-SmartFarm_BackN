@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS `User` (
 CREATE TABLE IF NOT EXISTS coop (
     coop_id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
-    name_coop VARCHAR(100) UNIQUE,
+    name_coop VARCHAR(100),
     date_adopt_animals DATE NOT NULL,
     amount INT NOT NULL,
     birthday DATE NOT NULL,
@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS coop (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES `User`(id_User) ON DELETE CASCADE,
+    UNIQUE KEY uq_coop_user_name_coop (user_id, name_coop),
     INDEX idx_user_id (user_id)
 );
 
@@ -41,7 +42,7 @@ CREATE TABLE IF NOT EXISTS device (
     name_coop VARCHAR(100),
     slot_index INT NOT NULL,
     name VARCHAR(100),
-    icon VARCHAR(255),
+    icon TEXT, -- เก็บ data: URI ของ SVG ได้ (ยาวเกิน 255)
     device_type VARCHAR(50),
     current_status VARCHAR(20) DEFAULT 'Offline',
     last_update TIMESTAMP NOT NULL,
