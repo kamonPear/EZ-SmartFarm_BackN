@@ -81,6 +81,9 @@ func MigrateModels(db *gorm.DB) error {
 	// MySQL strict mode (including handlers.ensureDefaultDeviceTypes seeding the 7
 	// standard types for every user - it never once succeeded because of this).
 	ensureColumnIsText(db, "device_type", "icon")
+	// device.icon มีปัญหาเดียวกัน - คัดลอกค่าไอคอน (SVG data URI) มาจาก device_type
+	// ตอนวางอุปกรณ์ลงคอก ถ้าคอลัมน์ยังแคบอยู่จะ insert/update ไม่ผ่านแบบเงียบๆ เหมือนกัน
+	ensureColumnIsText(db, "device", "icon")
 
 	// name_coop is a secondary key added alongside the existing id-based FKs.
 	// AutoMigrate doesn't manage this on its own, so add it explicitly and idempotently.

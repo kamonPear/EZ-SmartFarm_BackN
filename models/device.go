@@ -10,7 +10,11 @@ type Device struct {
     NameCoop      string      `gorm:"column:name_coop;type:varchar(100);index" json:"name_coop"`
     SlotIndex     int32       `gorm:"column:slot_index;type:int;not null" json:"slot_index"`
     Name          string      `gorm:"column:name;type:varchar(100);index" json:"name"`
-    Icon          string      `gorm:"column:icon;type:varchar(255)" json:"icon"`            
+    // text ไม่ใช่ varchar(255) เพราะไอคอนเก็บเป็น SVG data URI (500+ ตัวอักษร) คัด
+    // ลอกมาจาก device_type.icon ตอนวางอุปกรณ์ลงคอก - varchar(255) เดิมแคบเกินไป
+    // ทำให้ MySQL strict mode insert ไม่ผ่านแบบเงียบๆ (เจอบั๊กเดียวกันกับ
+    // device_type.icon มาแล้ว ดู ensureColumnIsText ใน migration.go)
+    Icon          string      `gorm:"column:icon;type:text" json:"icon"`
     DeviceType    string      `gorm:"column:device_type;type:varchar(50)" json:"device_type"`
     CurrentStatus string      `gorm:"column:current_status;type:varchar(20);default:'Offline'" json:"current_status"`
     LastUpdate    time.Time   `gorm:"column:last_update" json:"last_update"`
