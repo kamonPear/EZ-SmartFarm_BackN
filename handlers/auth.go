@@ -53,8 +53,10 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generic 401 for both "no such user" and "wrong password" - never reveal which.
-	if user == nil || !auth.CheckPassword(user.Password, req.Password) {
-		writeJSONErr(w, http.StatusUnauthorized, "invalid username or password")
+	// MySQL เปรียบเทียบ username แบบไม่สนตัวพิมพ์เล็ก/ใหญ่ (collation เริ่มต้น) ทำให้ "Kkk"
+	// หาเจอบัญชี "kkk" - บังคับให้ตรงตัวอักษรเป๊ะๆ ก่อนตรวจรหัสผ่าน
+	if user == nil || user.Username != req.Username || !auth.CheckPassword(user.Password, req.Password) {
+		writeJSONErr(w, http.StatusUnauthorized, "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
 		return
 	}
 
