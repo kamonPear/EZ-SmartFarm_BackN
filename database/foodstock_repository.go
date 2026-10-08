@@ -128,12 +128,13 @@ func GetFoodstockQuantity(userID int, foodType string) (quantity float64, found 
 }
 
 // DeductFoodstockByType ลด quantity_current ของอาหารประเภทที่ระบุลงตามจำนวนที่ขอ
-// (amount) เฉพาะสต็อกของ userID เท่านั้น - ไม่มีทางหักเกินกว่าที่มีจริงหรือติดลบได้
-// เด็ดขาด ถ้า amount มากกว่าที่เหลืออยู่ จะหักให้แค่เท่าที่มี (deducted) แล้วรายงาน
-// ส่วนที่ขาด (shortfall = amount - deducted) กลับไปให้ผู้เรียกตัดสินใจเอง
-// ว่าจะแจ้งเตือนผู้ใช้อย่างไร - เดิมฟังก์ชันนี้หักเต็มจำนวนที่ขอเสมอแล้วค่อยเซ็ต
-// ผลลัพธ์ติดลบเป็น 0 ทีหลัง ทำให้ข้อความ "หักสต็อก X กก. สำเร็จ" ที่โชว์ผู้ใช้เป็น
-// เท็จเวลาสต็อกเหลือน้อยกว่าที่ขอ (เช่นเหลือ 4 กก. แต่ระบบรายงานว่าหักได้ 15 กก.)
+// (amount) เฉพาะสต็อกของ userID เท่านั้น - ตัดแบบ "ทั้งหมดหรือไม่เลย" เท่านั้น ถ้า
+// สต็อกที่เหลือไม่พอสำหรับ amount ที่ขอ จะไม่ตัดอะไรเลยแม้แต่กิโลเดียว (deducted=0)
+// แล้วรายงานส่วนที่ขาด (shortfall) กลับไปแทน - เดิมฟังก์ชันนี้ตัดสต็อกเท่าที่มีให้
+// บางส่วนแล้วค่อยรายงานว่าขาด ทำให้สต็อกที่เหลือน้อยอยู่แล้วถูกล้างเป็น 0 ไปเงียบๆ
+// ทั้งที่ของจริงยังไม่ได้ถูกเอาออกไปใช้แต่อย่างใด (ผู้ใช้ยืนยันว่าไม่ต้องการแบบนั้น -
+// ถ้าไม่พอสำหรับยอดที่ต้องการจริง ก็ไม่ควรตัดอะไรเลย ปล่อยให้สต็อกที่เหลือยังอยู่ครบ
+// จนกว่าจะเติมของเพิ่ม)
 func DeductFoodstockByType(foodType string, userID int, amount float64) (deducted float64, shortfall float64, err error) {
 	var foodstock models.Foodstock
 
@@ -144,29 +145,20 @@ func DeductFoodstockByType(foodType string, userID int, amount float64) (deducte
 		return 0, 0, fmt.Errorf("ดึงข้อมูลสต็อกล้มเหลว: %v", err)
 	}
 
-	if foodstock.QuantityCurrent <= 0 {
-		log.Printf("⚠️ สต็อกอาหาร %s ปัจจุบันเป็น 0 ไม่สามารถตัดสต็อกเพิ่มได้ (ขาดอยู่ %.2f kg, user %d)\n", foodType, amount, userID)
-		return 0, amount, nil
+	if amount > foodstock.QuantityCurrent {
+		shortfall = amount - foodstock.QuantityCurrent
+		log.Printf("⚠️ สต็อกอาหาร %s ไม่พอ ต้องการ %.2f kg มีอยู่ %.2f kg (ขาด %.2f kg) ไม่ตัดสต็อก (user %d)\n", foodType, amount, foodstock.QuantityCurrent, shortfall, userID)
+		return 0, shortfall, nil
 	}
 
-	deducted = amount
-	if deducted > foodstock.QuantityCurrent {
-		shortfall = deducted - foodstock.QuantityCurrent
-		deducted = foodstock.QuantityCurrent
-	}
-
-	foodstock.QuantityCurrent -= deducted
+	foodstock.QuantityCurrent -= amount
 	foodstock.DateUp = time.Now()
 
 	if err := DB.Save(&foodstock).Error; err != nil {
 		return 0, 0, fmt.Errorf("อัปเดตสต็อกล้มเหลว: %v", err)
 	}
 
-	if shortfall > 0 {
-		log.Printf("⚠️ สต็อกอาหาร %s ไม่พอ ขอตัด %.2f kg ตัดได้จริง %.2f kg (ขาด %.2f kg) คงเหลือ 0 kg (user %d)\n", foodType, amount, deducted, shortfall, userID)
-	} else {
-		log.Printf("✓ ตัดสต็อก %s %.2f kg คงเหลือ %.2f kg (user %d)\n", foodType, deducted, foodstock.QuantityCurrent, userID)
-	}
-	return deducted, shortfall, nil
+	log.Printf("✓ ตัดสต็อก %s %.2f kg คงเหลือ %.2f kg (user %d)\n", foodType, amount, foodstock.QuantityCurrent, userID)
+	return amount, 0, nil
 }
 
