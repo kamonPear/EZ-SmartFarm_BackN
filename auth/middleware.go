@@ -15,6 +15,9 @@ import (
 // instead of one per rejected request.
 var adminKeyWarn sync.Once
 
+// taskKeyWarn is the SCHEDULED_TASK_KEY equivalent of adminKeyWarn.
+var taskKeyWarn sync.Once
+
 type contextKey int
 
 const (
@@ -85,6 +88,38 @@ func RequireAdminKey(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		provided := r.Header.Get("X-Admin-Key")
+		// Constant-time compare so a wrong key can't be recovered by timing the response.
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
+			writeJSONError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+
+		next(w, r)
+	}
+}
+
+// RequireScheduledTaskKey gates endpoints meant to be called by an external scheduled
+// pinger (e.g. a free service like cron-job.org) instead of a logged-in user - there is
+// no JWT to check here, so the gate is a shared secret compared against
+// SCHEDULED_TASK_KEY from the environment. Accepts the key as either the X-Task-Key
+// header or a ?key= query param, since some free cron-ping services only support setting
+// the target URL and not custom headers.
+func RequireScheduledTaskKey(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		expected := os.Getenv("SCHEDULED_TASK_KEY")
+		if expected == "" {
+			// Fail closed: an unset key must not silently leave the endpoint open.
+			taskKeyWarn.Do(func() {
+				log.Println("WARNING: SCHEDULED_TASK_KEY is not set - the scheduled food-deduction endpoint is disabled until it is.")
+			})
+			writeJSONError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+
+		provided := r.Header.Get("X-Task-Key")
+		if provided == "" {
+			provided = r.URL.Query().Get("key")
+		}
 		// Constant-time compare so a wrong key can't be recovered by timing the response.
 		if subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
 			writeJSONError(w, http.StatusForbidden, "forbidden")

@@ -262,6 +262,76 @@ func ComputeDailyFoodConsumption(coops []models.Coop, foodType string) float64 {
 	return total
 }
 
+// RunDailyDeductionForAllUsers ตัดสต็อกอาหารประจำวันให้ "ทุกผู้ใช้ในระบบ" (ไม่ใช่
+// แค่คนเดียว) - ตรรกะเดียวกับที่ scheduler.SetupJobs รันตอน 6 โมงเช้า (ICT) และที่
+// RunScheduledFoodDeductionHandler เรียกเมื่อถูกปลุกจากภายนอก แยกออกมาเป็นฟังก์ชัน
+// กลางจุดเดียว กันไม่ให้ลอจิกเดียวกันซ้ำอยู่ 2 ที่ (cron ในตัว vs endpoint ที่โดน
+// เรียกจากภายนอก) แล้วแก้ไม่ครบทั้งคู่ในอนาคต
+func RunDailyDeductionForAllUsers() (deductedUsers int, err error) {
+	coopsByUser, err := database.GetAllCoopsGroupedByUser()
+	if err != nil {
+		return 0, err
+	}
+
+	for userID, coops := range coopsByUser {
+		userDeducted := false
+		for _, foodType := range []string{models.FoodTypeSmallPellet, models.FoodTypeLargePellet} {
+			items := ComputeDailyFoodConsumptionByCoop(coops, foodType)
+			var amount float64
+			for _, item := range items {
+				amount += item.KgGiven
+			}
+			if amount <= 0 {
+				continue // ไม่มีคอกไหนของผู้ใช้นี้กำลังกินอาหารประเภทนี้อยู่
+			}
+			if err := database.DeductFoodstockByType(foodType, userID, amount); err != nil {
+				log.Printf("❌ [Food] ตัดสต็อก %s ของผู้ใช้ %d ล้มเหลว: %v\n", foodType, userID, err)
+				continue
+			}
+			if _, err := database.CreateFoodDistributionBatch(foodType, items, userID); err != nil {
+				log.Printf("❌ [Food] บันทึก breakdown ของผู้ใช้ %d ล้มเหลว (ตัดสต็อกไปแล้ว): %v\n", userID, err)
+			}
+			userDeducted = true
+		}
+		if userDeducted {
+			deductedUsers++
+		}
+	}
+
+	return deductedUsers, nil
+}
+
+// RunScheduledFoodDeductionHandler ให้ตัวปลุกงานจากภายนอก (เช่นบริการฟรีอย่าง
+// cron-job.org) เรียก URL นี้ตามเวลาที่ตั้งไว้ เพื่อตัดสต็อกอาหารประจำวันให้ทุก
+// ผู้ใช้ - มีไว้เพราะ Render แพลนฟรีจะพักเซิร์ฟเวอร์ทิ้งเมื่อไม่มีคนใช้ ทำให้ cron ที่
+// ฝังอยู่ในตัวโปรเซส (scheduler.SetupJobs) หรือตัวตัดสต็อกสำรองตอนเปิดหน้าแอป
+// (RunCatchUpDeduction) อาจไม่มีโอกาสได้รันเลยถ้าทั้งวันไม่มีใครเปิดแอป - คำขอ HTTP
+// จากภายนอกนี้เองที่ปลุกเซิร์ฟเวอร์ขึ้นมาทำงานได้โดยไม่ต้องพึ่งผู้ใช้เปิดแอปเลย
+// ป้องกันด้วย SCHEDULED_TASK_KEY (ดู auth.RequireScheduledTaskKey) แทน JWT เพราะ
+// ผู้เรียกไม่ใช่ผู้ใช้ที่ล็อกอิน
+// POST /api/system/food-deduction/run?key=xxx
+func RunScheduledFoodDeductionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	deductedUsers, err := RunDailyDeductionForAllUsers()
+	if err != nil {
+		log.Printf("[%s] %s - %d (Scheduled deduction failed: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
+		http.Error(w, "Failed to run scheduled deduction", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	log.Printf("[%s] %s - %d ✓ ตัดสต็อกอาหารประจำวัน (external trigger) เสร็จสิ้น (%d ผู้ใช้)", r.Method, r.RequestURI, http.StatusOK, deductedUsers)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":        "ตัดสต็อกอาหารประจำวันสำเร็จ",
+		"deducted_users": deductedUsers,
+	})
+}
+
 // RunCatchUpDeduction ตรวจว่า userID ถูกตัดสต็อกอาหารประจำวันของวันนี้ (ตามปฏิทินไทย)
 // ไปแล้วหรือยัง ถ้ายัง ตัดให้ทันที - มีฟังก์ชันนี้เพราะ cron ตอน 6 โมงเช้า
 // (scheduler.SetupJobs) ทำงานได้ก็ต่อเมื่อตัวโปรเซสเซิร์ฟเวอร์ "มีชีวิตอยู่" ณ
