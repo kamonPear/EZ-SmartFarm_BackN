@@ -78,8 +78,7 @@ func MigrateModels(db *gorm.DB) error {
 	// device_type.icon was originally created as VARCHAR(255) by AutoMigrate (its
 	// mapping before the struct tag changed to `text`) - SVG data: URI icons run
 	// 500+ characters, so every INSERT into this column was silently rejected by
-	// MySQL strict mode (including handlers.ensureDefaultDeviceTypes seeding the 7
-	// standard types for every user - it never once succeeded because of this).
+	// MySQL strict mode.
 	ensureColumnIsText(db, "device_type", "icon")
 	// device.icon มีปัญหาเดียวกัน - คัดลอกค่าไอคอน (SVG data URI) มาจาก device_type
 	// ตอนวางอุปกรณ์ลงคอก ถ้าคอลัมน์ยังแคบอยู่จะ insert/update ไม่ผ่านแบบเงียบๆ เหมือนกัน
