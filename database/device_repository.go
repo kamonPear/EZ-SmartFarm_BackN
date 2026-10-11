@@ -42,6 +42,8 @@ func SaveCoopLayout(coopID int, slots []models.SlotPayload, userID int) error {
 					DeviceType:    deviceType,
 					CurrentStatus: "Offline",
 					LastUpdate:    time.Now(),
+					PosX:          slot.X,
+					PosY:          slot.Y,
 				}
 
 				if err := tx.Create(&newDevice).Error; err != nil {

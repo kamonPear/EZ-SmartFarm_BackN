@@ -19,6 +19,12 @@ type Device struct {
     CurrentStatus string      `gorm:"column:current_status;type:varchar(20);default:'Offline'" json:"current_status"`
     LastUpdate    time.Time   `gorm:"column:last_update" json:"last_update"`
 
+    // จุดที่ผู้ใช้วางอุปกรณ์จริงบนผังคอก (เปอร์เซ็นต์ 0-100 ของแคนวาส) เก็บแยกจาก
+    // slot_index ซึ่งยังเป็นตัวระบุอุปกรณ์สำหรับจับคู่ข้อมูลจากบอร์ด (coop_id + slot_index)
+    // เหมือนเดิม - NULL = อุปกรณ์ที่วางไว้ก่อนมีคอลัมน์นี้ ให้ client ใช้ตำแหน่งกริดจาก slot_index แทน
+    PosX          *float64    `gorm:"column:pos_x;type:double" json:"pos_x"`
+    PosY          *float64    `gorm:"column:pos_y;type:double" json:"pos_y"`
+
     Coop          Coop        `gorm:"foreignKey:CoopID;constraint:-" json:"coop,omitempty"`
     SensorLogs    []SensorLog `gorm:"foreignKey:DeviceID;constraint:-" json:"sensor_logs,omitempty"`
 
@@ -47,6 +53,9 @@ type SlotPayload struct {
 	ID     int            `json:"id"`
 	Device *DevicePayload `json:"device"` // ใช้ Pointer เพื่อรองรับค่า null เวลาช่องนั้นว่าง
 	Status string         `json:"status"`
+	// ตำแหน่งที่วางจริงบนแคนวาส (เปอร์เซ็นต์) - ไม่บังคับ client เก่าที่ไม่ส่งมาจะได้ NULL
+	X *float64 `json:"x"`
+	Y *float64 `json:"y"`
 }
 
 type LayoutPayload struct {

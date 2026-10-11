@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS device (
     coop_id INT NOT NULL,
     name_coop VARCHAR(100),
     slot_index INT NOT NULL,
+    pos_x DOUBLE NULL, -- ตำแหน่งที่วางจริงบนผังคอก (% ของแคนวาส) NULL = ใช้ตำแหน่งกริดจาก slot_index
+    pos_y DOUBLE NULL,
     name VARCHAR(100),
     icon TEXT, -- เก็บ data: URI ของ SVG ได้ (ยาวเกิน 255)
     device_type VARCHAR(50),
