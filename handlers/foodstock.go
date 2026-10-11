@@ -70,6 +70,8 @@ func GetAllFoodstocksHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	RunCatchUpDeduction(userID)
+
 	foodstocks, err := database.GetAllFoodstocks(userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to fetch foodstocks: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
@@ -260,6 +262,137 @@ func ComputeDailyFoodConsumption(coops []models.Coop, foodType string) float64 {
 	return total
 }
 
+// RunDailyDeductionForAllUsers ตัดสต็อกอาหารประจำวันให้ "ทุกผู้ใช้ในระบบ" (ไม่ใช่
+// แค่คนเดียว) - ตรรกะเดียวกับที่ scheduler.SetupJobs รันตอน 6 โมงเช้า (ICT) และที่
+// RunScheduledFoodDeductionHandler เรียกเมื่อถูกปลุกจากภายนอก แยกออกมาเป็นฟังก์ชัน
+// กลางจุดเดียว กันไม่ให้ลอจิกเดียวกันซ้ำอยู่ 2 ที่ (cron ในตัว vs endpoint ที่โดน
+// เรียกจากภายนอก) แล้วแก้ไม่ครบทั้งคู่ในอนาคต
+func RunDailyDeductionForAllUsers() (deductedUsers int, err error) {
+	coopsByUser, err := database.GetAllCoopsGroupedByUser()
+	if err != nil {
+		return 0, err
+	}
+
+	for userID, coops := range coopsByUser {
+		userDeducted := false
+		for _, foodType := range []string{models.FoodTypeSmallPellet, models.FoodTypeLargePellet} {
+			items := ComputeDailyFoodConsumptionByCoop(coops, foodType)
+			var amount float64
+			for _, item := range items {
+				amount += item.KgGiven
+			}
+			if amount <= 0 {
+				continue // ไม่มีคอกไหนของผู้ใช้นี้กำลังกินอาหารประเภทนี้อยู่
+			}
+			_, shortfall, err := database.DeductFoodstockByType(foodType, userID, amount)
+			if err != nil {
+				log.Printf("❌ [Food] ตัดสต็อก %s ของผู้ใช้ %d ล้มเหลว: %v\n", foodType, userID, err)
+				continue
+			}
+			if shortfall > 0 {
+				// สต็อกไม่พอสำหรับยอดที่ต้องการเต็มจำนวน - ไม่ตัดอะไรเลย (deducted=0)
+				// ไม่มีอะไรให้บันทึก breakdown
+				log.Printf("⚠️ [Food] สต็อก %s ของผู้ใช้ %d ไม่พอ ต้องการ %.2f kg (ขาด %.2f kg) ไม่ได้ตัดสต็อก\n", foodType, userID, amount, shortfall)
+				continue
+			}
+			if _, err := database.CreateFoodDistributionBatch(foodType, items, userID); err != nil {
+				log.Printf("❌ [Food] บันทึก breakdown ของผู้ใช้ %d ล้มเหลว (ตัดสต็อกไปแล้ว): %v\n", userID, err)
+			}
+			userDeducted = true
+		}
+		if userDeducted {
+			deductedUsers++
+		}
+	}
+
+	return deductedUsers, nil
+}
+
+// RunScheduledFoodDeductionHandler ให้ตัวปลุกงานจากภายนอก (เช่นบริการฟรีอย่าง
+// cron-job.org) เรียก URL นี้ตามเวลาที่ตั้งไว้ เพื่อตัดสต็อกอาหารประจำวันให้ทุก
+// ผู้ใช้ - มีไว้เพราะ Render แพลนฟรีจะพักเซิร์ฟเวอร์ทิ้งเมื่อไม่มีคนใช้ ทำให้ cron ที่
+// ฝังอยู่ในตัวโปรเซส (scheduler.SetupJobs) หรือตัวตัดสต็อกสำรองตอนเปิดหน้าแอป
+// (RunCatchUpDeduction) อาจไม่มีโอกาสได้รันเลยถ้าทั้งวันไม่มีใครเปิดแอป - คำขอ HTTP
+// จากภายนอกนี้เองที่ปลุกเซิร์ฟเวอร์ขึ้นมาทำงานได้โดยไม่ต้องพึ่งผู้ใช้เปิดแอปเลย
+// ป้องกันด้วย SCHEDULED_TASK_KEY (ดู auth.RequireScheduledTaskKey) แทน JWT เพราะ
+// ผู้เรียกไม่ใช่ผู้ใช้ที่ล็อกอิน
+// POST /api/system/food-deduction/run?key=xxx
+func RunScheduledFoodDeductionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	deductedUsers, err := RunDailyDeductionForAllUsers()
+	if err != nil {
+		log.Printf("[%s] %s - %d (Scheduled deduction failed: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
+		http.Error(w, "Failed to run scheduled deduction", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	log.Printf("[%s] %s - %d ✓ ตัดสต็อกอาหารประจำวัน (external trigger) เสร็จสิ้น (%d ผู้ใช้)", r.Method, r.RequestURI, http.StatusOK, deductedUsers)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":        "ตัดสต็อกอาหารประจำวันสำเร็จ",
+		"deducted_users": deductedUsers,
+	})
+}
+
+// RunCatchUpDeduction ตรวจว่า userID ถูกตัดสต็อกอาหารประจำวันของวันนี้ (ตามปฏิทินไทย)
+// ไปแล้วหรือยัง ถ้ายัง ตัดให้ทันที - มีฟังก์ชันนี้เพราะ cron ตอน 6 โมงเช้า
+// (scheduler.SetupJobs) ทำงานได้ก็ต่อเมื่อตัวโปรเซสเซิร์ฟเวอร์ "มีชีวิตอยู่" ณ
+// วินาทีนั้นจริงๆ แต่ Render แพลนฟรีจะพักโปรเซสทิ้งหลังไม่มีคนใช้ ~15 นาที แล้วจะตื่น
+// ขึ้นมาใหม่ก็ต่อเมื่อมี request เข้ามาเท่านั้น - ถ้าทั้งคืนไม่มีใครเปิดแอปเลย ตัวโปรเซส
+// อาจไม่ได้ทำงานอยู่ตอน 06:00 น. พอดี ทำให้ cron ที่ตั้งไว้ไม่มีโอกาสได้รันเลยสักครั้ง
+// โดยไม่มี error ให้เห็นที่ไหนเลย เรียกฟังก์ชันนี้ตอนเปิดหน้าคลังอาหาร (ซึ่งเป็น
+// request ที่ปลุกเซิร์ฟเวอร์ขึ้นมาแน่ๆ) เพื่อให้มีจุดสำรองที่ตัดสต็อกให้ได้ทุกวัน
+// ตราบใดที่ผู้ใช้เปิดแอปอย่างน้อยวันละครั้ง
+func RunCatchUpDeduction(userID int) {
+	coops, err := database.GetAllCoops(userID)
+	if err != nil {
+		log.Printf("❌ [CatchUp] ดึงข้อมูลคอกของ user %d ล้มเหลว: %v\n", userID, err)
+		return
+	}
+
+	for _, foodType := range []string{models.FoodTypeSmallPellet, models.FoodTypeLargePellet} {
+		lastDate, found, err := database.GetLatestDistributionDate(userID, foodType)
+		if err != nil {
+			log.Printf("❌ [CatchUp] ตรวจสอบวันตัดสต็อกล่าสุดของ user %d ล้มเหลว: %v\n", userID, err)
+			continue
+		}
+		if found && models.DateKey(lastDate) == models.DateKey(time.Now()) {
+			continue // ตัดไปแล้ววันนี้ (จาก cron หรือเปิดหน้านี้รอบก่อนของวันเดียวกัน)
+		}
+
+		items := ComputeDailyFoodConsumptionByCoop(coops, foodType)
+		var amount float64
+		for _, item := range items {
+			amount += item.KgGiven
+		}
+		if amount <= 0 {
+			continue // ไม่มีคอกไหนกำลังกินอาหารประเภทนี้อยู่
+		}
+
+		deducted, shortfall, err := database.DeductFoodstockByType(foodType, userID, amount)
+		if err != nil {
+			log.Printf("❌ [CatchUp] ตัดสต็อก %s ของ user %d ล้มเหลว: %v\n", foodType, userID, err)
+			continue
+		}
+		if shortfall > 0 {
+			// สต็อกไม่พอสำหรับยอดที่ต้องการเต็มจำนวน - ไม่ตัดอะไรเลย ไม่มีอะไรให้
+			// บันทึก breakdown - ไม่มี distribution ของวันนี้ถูกสร้างขึ้น เลยจะลองตัด
+			// ใหม่อีกครั้งในการเรียกถัดไป (เช่นพรุ่งนี้ หรือหลังเติมสต็อก) โดยอัตโนมัติ
+			log.Printf("⚠️ [CatchUp] สต็อก %s ของ user %d ไม่พอ ต้องการ %.2f kg (ขาด %.2f kg) ไม่ได้ตัดสต็อก\n", foodType, userID, amount, shortfall)
+			continue
+		}
+		if _, err := database.CreateFoodDistributionBatch(foodType, items, userID); err != nil {
+			log.Printf("❌ [CatchUp] บันทึก breakdown ของ user %d ล้มเหลว (ตัดสต็อกไปแล้ว): %v\n", userID, err)
+		}
+		log.Printf("✅ [CatchUp] ตัดสต็อก %s %.2f กก. ให้ user %d แทน Cron ที่พลาดไป\n", foodType, deducted, userID)
+	}
+}
+
 // ForceDeductStockHandler อนุญาตให้เรียก API เพื่อตัดสต็อกแบบแมนนวล ต้องระบุประเภทอาหารก่อนตัดเสมอ
 // ยอดที่ตัดคำนวณจากจำนวนไก่จริงในคอกของผู้เรียก (userID) ที่กำลังกินอาหารประเภทนี้อยู่
 // (เหมือนกับยอดที่ Cron ตัดให้อัตโนมัติทุกเที่ยงคืน) ไม่ใช่ค่าคงที่ตายตัวอีกต่อไป
@@ -314,9 +447,29 @@ func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.DeductFoodstockByType(req.FoodType, userID, amount); err != nil {
+	deducted, shortfall, err := database.DeductFoodstockByType(req.FoodType, userID, amount)
+	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to deduct stock: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to deduct stock", http.StatusInternalServerError)
+		return
+	}
+
+	// สต็อกไม่พอสำหรับยอดที่ต้องการเต็มจำนวน (ตัดแบบทั้งหมดหรือไม่เลย) - ไม่มีอะไร
+	// ถูกตัดออกจากสต็อกจริง เลยไม่มีอะไรให้บันทึก breakdown ด้วย
+	if shortfall > 0 {
+		message := fmt.Sprintf(
+			"สต็อกอาหาร%sเหลือไม่พอ มีอยู่ %.2f กก. แต่ต้องการ %.2f กก. (ขาดอีก %.2f กก.) ยังไม่ได้ตัดสต็อก กรุณาเติมสต็อกก่อน",
+			req.FoodType, amount-shortfall, amount, shortfall,
+		)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		log.Printf("[%s] %s - %d ✓ %s", r.Method, r.RequestURI, http.StatusOK, message)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"message":   message,
+			"food_type": req.FoodType,
+			"deducted":  0,
+			"shortfall": shortfall,
+		})
 		return
 	}
 
@@ -327,12 +480,15 @@ func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[%s] %s - (บันทึก breakdown รายคอกไม่สำเร็จ แต่ตัดสต็อกไปแล้ว: %v)", r.Method, r.RequestURI, err)
 	}
 
+	message := fmt.Sprintf("หักสต็อกอาหาร%s %.2f กิโลกรัม สำเร็จ", req.FoodType, deducted)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	log.Printf("[%s] %s - %d ✓ ตัดสต็อก %s %.2f กก. เรียบร้อยแล้ว", r.Method, r.RequestURI, http.StatusOK, req.FoodType, amount)
+	log.Printf("[%s] %s - %d ✓ %s", r.Method, r.RequestURI, http.StatusOK, message)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message":   fmt.Sprintf("หักสต็อกอาหาร%s %.2f กิโลกรัม สำเร็จ", req.FoodType, amount),
+		"message":   message,
 		"food_type": req.FoodType,
-		"deducted":  amount,
+		"deducted":  deducted,
+		"shortfall": shortfall,
 	})
 }

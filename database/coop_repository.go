@@ -11,12 +11,14 @@ import (
 )
 
 // IsDuplicateNameCoop reports whether err is a unique-constraint violation on name_coop
+// (the per-user unique key uq_coop_user_name, or the old global-unique uq_coop_name_coop
+// some rows may still reference in an error message before a fresh deploy re-migrates).
 func IsDuplicateNameCoop(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "name_coop") &&
+	return (strings.Contains(msg, "name_coop") || strings.Contains(msg, "uq_coop_user_name")) &&
 		(strings.Contains(msg, "duplicate") || strings.Contains(msg, "unique"))
 }
 

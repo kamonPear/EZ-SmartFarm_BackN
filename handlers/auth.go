@@ -52,11 +52,14 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generic 401 for both "no such user" and "wrong password" - never reveal which.
-	// MySQL เปรียบเทียบ username แบบไม่สนตัวพิมพ์เล็ก/ใหญ่ (collation เริ่มต้น) ทำให้ "Kkk"
-	// หาเจอบัญชี "kkk" - บังคับให้ตรงตัวอักษรเป๊ะๆ ก่อนตรวจรหัสผ่าน
+	// Generic 401 for "no such user", "wrong password", and "username matched only
+	// because the username column's collation is case-insensitive" - never reveal
+	// which. MySQL's default collation (utf8mb4_general_ci) means `WHERE username = ?`
+	// above already matched "Kkk" against a stored "kkk" - add an exact Go-side
+	// comparison so login genuinely requires the right case, not just the right
+	// letters (confirmed live: logging in as "Kkk" succeeded against account "kkk").
 	if user == nil || user.Username != req.Username || !auth.CheckPassword(user.Password, req.Password) {
-		writeJSONErr(w, http.StatusUnauthorized, "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+		writeJSONErr(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
 

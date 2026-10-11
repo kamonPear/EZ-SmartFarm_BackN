@@ -3,12 +3,24 @@ package database
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"EZ-SmartFarm_BachN/models"
 
 	"gorm.io/gorm"
 )
+
+// IsDuplicateHealthDate reports whether err is a unique-constraint violation
+// on (coop_id, date) - i.e. a health record already exists for that coop on
+// that date. Mirrors IsDuplicateEggDate (database/egg_repository.go).
+func IsDuplicateHealthDate(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate") && strings.Contains(msg, "coop_id")
+}
 
 func normalizeHealthDate(t time.Time) time.Time {
 	local := t.In(time.Local)

@@ -132,7 +132,7 @@ func GetCalendarMarkersHandler(w http.ResponseWriter, r *http.Request) {
 		completedMap[strconv.Itoa(h.CoopID)+"_"+h.VaccineName] = true
 	}
 
-	todayKey := time.Now().Format("2006-01-02")
+	todayKey := models.DateKey(time.Now())
 
 	for _, coop := range relevantCoops {
 		if coop.Birthday.IsZero() || coop.DateAdoptAnimals.IsZero() {
@@ -140,14 +140,14 @@ func GetCalendarMarkersHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, schedule := range schedules {
 			windowEnd := coop.Birthday.AddDate(0, 0, schedule.MaxAgeDays)
-			if windowEnd.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
+			if models.DateKey(windowEnd) < models.DateKey(coop.DateAdoptAnimals) {
 				continue
 			}
 			dueDate := coop.Birthday.AddDate(0, 0, schedule.MinAgeDays)
-			if dueDate.Format("2006-01-02") < coop.DateAdoptAnimals.Format("2006-01-02") {
+			if models.DateKey(dueDate) < models.DateKey(coop.DateAdoptAnimals) {
 				dueDate = coop.DateAdoptAnimals
 			}
-			dueKey := dueDate.Format("2006-01-02")
+			dueKey := models.DateKey(dueDate)
 			isDone := completedMap[strconv.Itoa(coop.CoopID)+"_"+schedule.Name]
 			isOverdue := !isDone && dueKey < todayKey
 
@@ -188,7 +188,7 @@ func GetCalendarMarkersHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, h := range healths {
-		m := getOrCreate(h.RecordDate.Format("2006-01-02"))
+		m := getOrCreate(models.DateKey(h.RecordDate))
 		m.HasHealth = true
 		m.Details = append(m.Details, DayMarkerDetail{
 			Text:     fmt.Sprintf("ตรวจสุขภาพ – %s", coopName(h.CoopID)),
@@ -201,7 +201,7 @@ func GetCalendarMarkersHandler(w http.ResponseWriter, r *http.Request) {
 	// ----- วันเกิดไก่ / วันที่รับเข้าเลี้ยงของคอก -----
 	for _, coop := range relevantCoops {
 		if !coop.Birthday.IsZero() {
-			m := getOrCreate(coop.Birthday.Format("2006-01-02"))
+			m := getOrCreate(models.DateKey(coop.Birthday))
 			m.HasCoopInfo = true
 			m.Details = append(m.Details, DayMarkerDetail{
 				Text:     fmt.Sprintf("🎂 วันเกิดไก่ – %s", coopName(coop.CoopID)),
@@ -211,7 +211,7 @@ func GetCalendarMarkersHandler(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		if !coop.DateAdoptAnimals.IsZero() {
-			m := getOrCreate(coop.DateAdoptAnimals.Format("2006-01-02"))
+			m := getOrCreate(models.DateKey(coop.DateAdoptAnimals))
 			m.HasCoopInfo = true
 			m.Details = append(m.Details, DayMarkerDetail{
 				Text:     fmt.Sprintf("🏠 วันที่รับเข้าเลี้ยง – %s", coopName(coop.CoopID)),
@@ -234,7 +234,7 @@ func GetCalendarMarkersHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, a := range appts {
-		m := getOrCreate(a.AppointmentDate.Format("2006-01-02"))
+		m := getOrCreate(models.DateKey(a.AppointmentDate))
 		m.HasHealthAppointment = true
 		m.Details = append(m.Details, DayMarkerDetail{
 			Text:     fmt.Sprintf("🗓️ นัดตรวจสุขภาพ (กำหนดเอง) – %s", coopName(a.CoopID)),

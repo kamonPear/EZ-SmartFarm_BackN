@@ -127,6 +127,11 @@ func GetAllCoopsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// เป็นหน้าที่ถูกเปิดบ่อยที่สุด (หน้าแรกของทั้งเว็บและแอป) เลยอาศัยจังหวะนี้เป็น
+	// จุดสำรองเพิ่มเติมให้ RunCatchUpDeduction อีกจุด (นอกจากหน้าคลังอาหาร) - รันเป็น
+	// goroutine แยก ไม่ต้องรอผลเพราะหน้านี้ไม่ได้โชว์ตัวเลขสต็อกอาหารอยู่แล้ว
+	go RunCatchUpDeduction(userID)
+
 	coops, err := database.GetAllCoops(userID)
 	if err != nil {
 		log.Printf("[%s] %s - %d (Failed to fetch coops: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)

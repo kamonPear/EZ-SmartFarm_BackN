@@ -73,6 +73,8 @@ func SetupRoutes(db *gorm.DB) {
 	rg.PUT("/api/foods", auth.RequireAuth(handlers.UpdateFoodstockHandler))
 	rg.DELETE("/api/foods", auth.RequireAuth(handlers.DeleteFoodstockHandler))
 	rg.POST("/api/foodstocks/force-deduct", auth.RequireAuth(handlers.ForceDeductStockHandler))
+	// ปลุกจากภายนอก (เช่น cron-job.org) แทน JWT - ดู auth.RequireScheduledTaskKey
+	rg.POST("/api/system/food-deduction/run", auth.RequireScheduledTaskKey(handlers.RunScheduledFoodDeductionHandler))
 	rg.GET("/api/foods/coop-consumption", auth.RequireAuth(handlers.GetCoopFoodConsumptionHandler))
 	rg.POST("/api/foods/distribution", auth.RequireAuth(handlers.RecordFoodDistributionHandler))
 	rg.GET("/api/foods/distribution", auth.RequireAuth(handlers.GetFoodDistributionHistoryHandler))
@@ -120,6 +122,13 @@ func SetupRoutes(db *gorm.DB) {
 	rg.GET("/api/devices", auth.RequireAuth(handleDevicesGet))
 	rg.PUT("/api/devices", auth.RequireAuth(handlers.UpdateDeviceHandler))
 	rg.DELETE("/api/devices", auth.RequireAuth(handlers.DeleteDeviceHandler))
+
+	// Device types - ชนิดอุปกรณ์ที่ผู้ใช้เพิ่มเอง (ชื่อ+ไอคอน) ไว้เลือกใช้ซ้ำตอน
+	// จัดวางอุปกรณ์ลงคอก แยกจาก Device ซึ่งเป็นอุปกรณ์ที่ถูกวางจริงแล้ว
+	rg.POST("/api/device-types", auth.RequireAuth(handlers.CreateDeviceTypeHandler))
+	rg.GET("/api/device-types", auth.RequireAuth(handlers.GetDeviceTypesHandler))
+	rg.PUT("/api/device-types", auth.RequireAuth(handlers.UpdateDeviceTypeHandler))
+	rg.DELETE("/api/device-types", auth.RequireAuth(handlers.DeleteDeviceTypeHandler))
 
 	// Sensors - IoT device ingestion, no user JWT available in the field, stays public
 	rg.POST("/api/sensor-logs", handlers.ReceiveSensorDataHandler)

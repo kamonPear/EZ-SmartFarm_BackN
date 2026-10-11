@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/models"
@@ -60,6 +61,7 @@ func MigrateModels(db *gorm.DB) error {
 		&models.VaccineHistory{},
 		&models.HealthAppointment{},
 		&models.FarmThreshold{},
+		&models.DeviceType{},
 	); err != nil {
 		// AutoMigrate can fail partway through (e.g. a pre-existing FK type mismatch on
 		// egg/vaccine.coop_id) while still having fully migrated earlier models in the list.
@@ -73,15 +75,27 @@ func MigrateModels(db *gorm.DB) error {
 		log.Printf("Warning: Could not re-enable foreign key checks: %v", err)
 	}
 
-	// Coop names must be unique per user, not across the whole system: two different users
-	// can legitimately both name a coop "test". The old system-wide unique indexes
-	// (uq_coop_name_coop, and the bare `name_coop` one from the former `unique` gorm tag)
-	// made the second user's coop collide - and made startup log "Duplicate entry" errors
-	// once such rows existed. Drop them and add the per-user one explicitly and idempotently
-	// (AutoMigrate doesn't manage this composite index on its own).
-	ensureIndexDropped(db, "coop", "uq_coop_name_coop")
-	ensureIndexDropped(db, "coop", "name_coop")
-	ensureUniqueIndex(db, "coop", "uq_coop_user_name_coop", "ALTER TABLE `coop` ADD UNIQUE KEY `uq_coop_user_name_coop` (`user_id`, `name_coop`)")
+	// device_type.icon was originally created as VARCHAR(255) by AutoMigrate (its
+	// mapping before the struct tag changed to `text`) - SVG data: URI icons run
+	// 500+ characters, so every INSERT into this column was silently rejected by
+	// MySQL strict mode (including handlers.ensureDefaultDeviceTypes seeding the 7
+	// standard types for every user - it never once succeeded because of this).
+	ensureColumnIsText(db, "device_type", "icon")
+	// device.icon มีปัญหาเดียวกัน - คัดลอกค่าไอคอน (SVG data URI) มาจาก device_type
+	// ตอนวางอุปกรณ์ลงคอก ถ้าคอลัมน์ยังแคบอยู่จะ insert/update ไม่ผ่านแบบเงียบๆ เหมือนกัน
+	ensureColumnIsText(db, "device", "icon")
+
+	// name_coop is a secondary key added alongside the existing id-based FKs.
+	// AutoMigrate doesn't manage this on its own, so add it explicitly and idempotently.
+	// ⛔ เดิมตั้งเป็น unique เดี่ยวๆ แค่ name_coop ทำให้ชื่อคอกต้องไม่ซ้ำกับ "ทุก
+	// farm ในระบบ" ทั้งที่ควรห้ามซ้ำแค่ภายใน farm (user) เดียวกันเท่านั้น - คนละ
+	// user ตั้งชื่อคอกซ้ำกันได้ตามที่ผู้ใช้ขอ จึงเปลี่ยนเป็น unique คู่ (user_id,
+	// name_coop) แทนด้านล่าง (หลัง ensureAdminBootstrapAndOwnership เติม user_id
+	// ให้ครบก่อน) - ใช้ dropAllUniqueIndexesOnColumn (ไม่ใช่ ensureIndexDropped ตัว
+	// เดียว) เพราะพบว่าคอลัมน์นี้มี unique index ซ้อนกันอยู่ 2 ตัวคนละชื่อในฐานจริง
+	// (uq_coop_name_coop ที่ตั้งชื่อเอง กับอีกตัวชื่อ name_coop ที่ GORM สร้างเองแต่
+	// ก่อน) ลบทีละชื่อจะตกหล่นตัวที่สอง
+	dropAllUniqueIndexesOnColumn(db, "coop", "name_coop")
 
 	// AutoMigrate above should now create these itself (coop_id is narrowed to INT before
 	// it runs), but add them explicitly too as a guarded fallback - matching the naming
@@ -129,16 +143,26 @@ func MigrateModels(db *gorm.DB) error {
 		log.Printf("Warning: could not bootstrap admin/backfill ownership: %v", err)
 	}
 
+	// ชื่อคอกห้ามซ้ำแค่ภายใน farm (user) เดียวกัน - ทำหลัง ownership ด้านบน
+	// เพื่อให้ user_id ของทุกแถวถูกเติมครบแล้วก่อนสร้าง index คู่นี้
+	ensureUniqueIndex(db, "coop", "uq_coop_user_name", "ALTER TABLE `coop` ADD UNIQUE KEY `uq_coop_user_name` (`user_id`, `name_coop`)")
+
+	// ผลตรวจสุขภาพห้ามมีมากกว่า 1 แถวต่อคอกต่อวัน (เดิมไม่มีการกันเลย ยิง POST
+	// /api/healths ซ้ำกี่ครั้งก็สร้างแถวใหม่ได้เรื่อยๆ - ต้องเคลียร์แถวซ้ำที่มีอยู่
+	// แล้วในฐานก่อน ไม่งั้น ALTER TABLE ด้านล่างจะชนแล้วไม่ถูกสร้างแบบเงียบๆ)
+	dedupeHealthRecords(db)
+	ensureUniqueIndex(db, "health", "uq_health_coop_date", "ALTER TABLE `health` ADD UNIQUE KEY `uq_health_coop_date` (`coop_id`, `date`)")
+
 	fmt.Println("✓ All tables migrated successfully")
 	return nil
 }
 
 // ownedTables lists every "root" entity table that got a user_id column added for the
 // per-user data ownership feature (auth). Coop/Foodstock/ImportFood/FoodDistribution/
-// FarmLayout each own their data directly; Egg/Health/Vaccine/Device are scoped
-// indirectly through their parent coop instead (see database.CoopBelongsToUser) and so
-// don't need a column or FK of their own here.
-var ownedTables = []string{"coop", "foodstock", "importfood", "food_distribution", "farm_layout"}
+// FarmLayout/Vaccine/DeviceType each own their data directly; Egg/Health/
+// VaccineHistory/Device are scoped indirectly through their parent coop instead (see
+// database.CoopBelongsToUser) and so don't need a column or FK of their own here.
+var ownedTables = []string{"coop", "foodstock", "importfood", "food_distribution", "farm_layout", "vaccine", "device_type"}
 
 // ensureAdminBootstrapAndOwnership is the one-time (but safe-to-rerun) migration step
 // that turns on per-user data ownership on a database that predates it:
@@ -290,6 +314,44 @@ func ensureUniqueIndex(db *gorm.DB, table, indexName, ddl string) {
 	}
 }
 
+// dedupeHealthRecords ลบแถวผลตรวจสุขภาพที่ซ้ำกัน (coop_id, date เดียวกัน) เหลือ
+// ไว้แค่แถวล่าสุด (health_id สูงสุด = insert ล่าสุด) ก่อนเพิ่ม uq_health_coop_date
+// ด้านบนใน MigrateModels - ถ้าไม่ทำก่อน ALTER TABLE จะชนกับข้อมูลซ้ำที่มีอยู่แล้ว
+// แล้วถูกข้ามแบบเงียบๆ (ensureUniqueIndex แค่ log warning ไม่ throw) ทำให้ไม่มีอะไร
+// กันการบันทึกซ้ำได้จริงสักที แม้จะรัน migration นี้ไปแล้วก็ตาม
+func dedupeHealthRecords(db *gorm.DB) {
+	type dupGroup struct {
+		CoopID int
+		Date   time.Time
+	}
+	var groups []dupGroup
+	if err := db.Raw(
+		"SELECT coop_id, date FROM health GROUP BY coop_id, date HAVING COUNT(*) > 1",
+	).Scan(&groups).Error; err != nil {
+		log.Printf("Warning: could not check for duplicate health records: %v", err)
+		return
+	}
+	for _, g := range groups {
+		var keepID int
+		if err := db.Raw(
+			"SELECT health_id FROM health WHERE coop_id = ? AND date = ? ORDER BY health_id DESC LIMIT 1",
+			g.CoopID, g.Date,
+		).Scan(&keepID).Error; err != nil {
+			log.Printf("Warning: could not pick row to keep for coop %d date %v: %v", g.CoopID, g.Date, err)
+			continue
+		}
+		res := db.Exec(
+			"DELETE FROM health WHERE coop_id = ? AND date = ? AND health_id != ?",
+			g.CoopID, g.Date, keepID,
+		)
+		if res.Error != nil {
+			log.Printf("Warning: could not delete duplicate health records for coop %d date %v: %v", g.CoopID, g.Date, res.Error)
+			continue
+		}
+		log.Printf("Dedup: removed %d duplicate health record(s) for coop_id=%d date=%v (kept health_id=%d)", res.RowsAffected, g.CoopID, g.Date, keepID)
+	}
+}
+
 // ensureForeignKey adds a foreign key constraint only if it doesn't already exist (AutoMigrate re-runs on every startup)
 func ensureForeignKey(db *gorm.DB, table, constraintName, ddl string) {
 	var count int64
@@ -332,6 +394,27 @@ func ensureColumnIsInt(db *gorm.DB, table, column string, nullable bool) {
 	}
 	if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` INT %s", table, column, nullClause)).Error; err != nil {
 		log.Printf("Warning: could not narrow column %s.%s to INT: %v", table, column, err)
+	}
+}
+
+// ensureColumnIsText widens column on table to TEXT if it's still the old VARCHAR(255)
+// GORM's AutoMigrate originally created (AutoMigrate adds missing columns but doesn't
+// retroactively widen an already-existing one when the struct tag changes). A no-op
+// once the column is already text/mediumtext/longtext.
+func ensureColumnIsText(db *gorm.DB, table, column string) {
+	var dataType string
+	if err := db.Raw(
+		"SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+		table, column,
+	).Scan(&dataType).Error; err != nil {
+		log.Printf("Warning: could not check column type %s.%s: %v", table, column, err)
+		return
+	}
+	if dataType == "" || strings.Contains(dataType, "text") {
+		return
+	}
+	if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` TEXT NOT NULL", table, column)).Error; err != nil {
+		log.Printf("Warning: could not widen column %s.%s to TEXT: %v", table, column, err)
 	}
 }
 

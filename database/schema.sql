@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS coop (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES `User`(id_User) ON DELETE CASCADE,
-    UNIQUE KEY uq_coop_user_name_coop (user_id, name_coop),
+    UNIQUE KEY uq_coop_user_name (user_id, name_coop),
     INDEX idx_user_id (user_id)
 );
 

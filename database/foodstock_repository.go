@@ -91,86 +91,74 @@ func GetFoodstockByType(foodType string, userID int) (*models.Foodstock, error) 
 	return &foodstock, nil
 }
 
-// EnsureFoodstockRows makes sure every known food type has a foodstock row for the
-// legacy/original data (no owner yet - gets backfilled onto the bootstrap admin user
-// by ensureAdminBootstrapAndOwnership during migration). Existing databases only ever
-// had a single untyped row (food_id=1) - its quantity is carried over onto the small
-// pellet type here, and the large pellet type starts at 0. New users get their own
-// per-type rows lazily (see addToFoodstock) the first time they import food.
+// EnsureFoodstockRows is a one-time migration that adopts the legacy pre-ownership
+// untyped row (food_id=1, no food_type, no owner) onto the small pellet type, back
+// when foodstock had no user_id FK yet (it gets backfilled onto the bootstrap admin
+// user by ensureAdminBootstrapAndOwnership right after this runs). That FK now exists
+// on every environment, so it's no longer safe to create an ownerless row here even
+// as a fallback - every user gets their own per-type rows lazily instead (see
+// addToFoodstock the first time they import food). If there's no legacy row left to
+// adopt (already migrated, or the table was cleared out), this is a no-op.
 func EnsureFoodstockRows() error {
 	var legacy models.Foodstock
 	hasLegacyRow := DB.Where("food_type = ? OR food_type IS NULL", "").First(&legacy).Error == nil
-
-	for _, foodType := range []string{models.FoodTypeSmallPellet, models.FoodTypeLargePellet} {
-		// Deliberately checks for ANY row of this food type (any owner), not just
-		// unowned ones - once the legacy row has been split into typed rows the first
-		// time, this must never fire again, otherwise every subsequent boot would try
-		// to insert another ownerless (user_id=0) row here, which the user_id FK added
-		// by ensureAdminBootstrapAndOwnership rejects. New users get their own rows
-		// lazily via addToFoodstock instead.
-		var count int64
-		if err := DB.Model(&models.Foodstock{}).Where("food_type = ?", foodType).Count(&count).Error; err != nil {
-			return err
-		}
-		if count > 0 {
-			continue
-		}
-
-		if hasLegacyRow && foodType == models.FoodTypeSmallPellet {
-			legacy.FoodType = foodType
-			if err := DB.Save(&legacy).Error; err != nil {
-				return err
-			}
-			log.Printf("✓ Migrated legacy foodstock row onto %s (%.2f kg)\n", foodType, legacy.QuantityCurrent)
-			continue
-		}
-
-		if err := DB.Create(&models.Foodstock{
-			FoodType:        foodType,
-			QuantityCurrent: 0,
-			DateUp:          time.Now(),
-		}).Error; err != nil {
-			return err
-		}
-		log.Printf("✓ Created foodstock row for %s\n", foodType)
+	if !hasLegacyRow {
+		return nil
 	}
 
+	legacy.FoodType = models.FoodTypeSmallPellet
+	if err := DB.Save(&legacy).Error; err != nil {
+		return err
+	}
+	log.Printf("✓ Migrated legacy foodstock row onto %s (%.2f kg)\n", models.FoodTypeSmallPellet, legacy.QuantityCurrent)
 	return nil
 }
 
-// DeductFoodstockByType ทำหน้าที่ลด quantity_current ของอาหารประเภทที่ระบุลงตามจำนวนที่กำหนด
-// เฉพาะสต็อกของ userID เท่านั้น
-func DeductFoodstockByType(foodType string, userID int, amount float64) error {
+// GetFoodstockQuantity returns userID's current quantity_current for foodType, and
+// whether a row exists at all yet (found=false if the farm never had this food type).
+func GetFoodstockQuantity(userID int, foodType string) (quantity float64, found bool, err error) {
+	var foodstock models.Foodstock
+	if err := DB.Where("food_type = ? AND user_id = ?", foodType, userID).First(&foodstock).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return 0, false, nil
+		}
+		return 0, false, err
+	}
+	return foodstock.QuantityCurrent, true, nil
+}
+
+// DeductFoodstockByType ลด quantity_current ของอาหารประเภทที่ระบุลงตามจำนวนที่ขอ
+// (amount) เฉพาะสต็อกของ userID เท่านั้น - ตัดแบบ "ทั้งหมดหรือไม่เลย" เท่านั้น ถ้า
+// สต็อกที่เหลือไม่พอสำหรับ amount ที่ขอ จะไม่ตัดอะไรเลยแม้แต่กิโลเดียว (deducted=0)
+// แล้วรายงานส่วนที่ขาด (shortfall) กลับไปแทน - เดิมฟังก์ชันนี้ตัดสต็อกเท่าที่มีให้
+// บางส่วนแล้วค่อยรายงานว่าขาด ทำให้สต็อกที่เหลือน้อยอยู่แล้วถูกล้างเป็น 0 ไปเงียบๆ
+// ทั้งที่ของจริงยังไม่ได้ถูกเอาออกไปใช้แต่อย่างใด (ผู้ใช้ยืนยันว่าไม่ต้องการแบบนั้น -
+// ถ้าไม่พอสำหรับยอดที่ต้องการจริง ก็ไม่ควรตัดอะไรเลย ปล่อยให้สต็อกที่เหลือยังอยู่ครบ
+// จนกว่าจะเติมของเพิ่ม)
+func DeductFoodstockByType(foodType string, userID int, amount float64) (deducted float64, shortfall float64, err error) {
 	var foodstock models.Foodstock
 
 	if err := DB.Where("food_type = ? AND user_id = ?", foodType, userID).First(&foodstock).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return fmt.Errorf("ไม่พบข้อมูลสต็อกอาหารประเภท %s", foodType)
+			return 0, 0, fmt.Errorf("ไม่พบข้อมูลสต็อกอาหารประเภท %s", foodType)
 		}
-		return fmt.Errorf("ดึงข้อมูลสต็อกล้มเหลว: %v", err)
+		return 0, 0, fmt.Errorf("ดึงข้อมูลสต็อกล้มเหลว: %v", err)
 	}
 
-	// เช็คว่ามีอาหารเหลือให้ตัดหรือไม่
-	if foodstock.QuantityCurrent <= 0 {
-		log.Printf("⚠️ สต็อกอาหาร %s ปัจจุบันเป็น 0 ไม่สามารถตัดสต็อกเพิ่มได้\n", foodType)
-		return nil
+	if amount > foodstock.QuantityCurrent {
+		shortfall = amount - foodstock.QuantityCurrent
+		log.Printf("⚠️ สต็อกอาหาร %s ไม่พอ ต้องการ %.2f kg มีอยู่ %.2f kg (ขาด %.2f kg) ไม่ตัดสต็อก (user %d)\n", foodType, amount, foodstock.QuantityCurrent, shortfall, userID)
+		return 0, shortfall, nil
 	}
 
-	// หักลบจำนวนอาหาร
 	foodstock.QuantityCurrent -= amount
-
-	// ดักจับกรณีหักแล้วยอดติดลบ ให้เซ็ตเป็น 0
-	if foodstock.QuantityCurrent < 0 {
-		foodstock.QuantityCurrent = 0
-	}
 	foodstock.DateUp = time.Now()
 
-	// บันทึกข้อมูลกลับลง Database
 	if err := DB.Save(&foodstock).Error; err != nil {
-		return fmt.Errorf("อัปเดตสต็อกล้มเหลว: %v", err)
+		return 0, 0, fmt.Errorf("อัปเดตสต็อกล้มเหลว: %v", err)
 	}
 
 	log.Printf("✓ ตัดสต็อก %s %.2f kg คงเหลือ %.2f kg (user %d)\n", foodType, amount, foodstock.QuantityCurrent, userID)
-	return nil
+	return amount, 0, nil
 }
 

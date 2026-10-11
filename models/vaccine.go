@@ -9,6 +9,7 @@ import "time"
 // ไว้ตารางเดียวกันแล้วสับสนตามที่ผู้ใช้สะท้อนมา จึงแยกกลับเป็น 2 ตาราง)
 type Vaccine struct {
 	VaccineID  int    `gorm:"primaryKey;column:vaccine_id" json:"vaccine_id"`
+	UserID     int    `gorm:"column:user_id;type:int;size:32;index" json:"user_id"`
 	Name       string `gorm:"column:name_vaccine;type:varchar(50);not null" json:"name"`
 	Method     string `gorm:"column:method;type:varchar(100);not null" json:"method"`
 	Note       string `gorm:"column:note;type:varchar(100)" json:"note"`

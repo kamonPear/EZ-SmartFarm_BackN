@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"EZ-SmartFarm_BachN/models"
+	"gorm.io/gorm"
 )
 
 // CreateFoodDistributionBatch inserts one row per coop for a single deduction event,
@@ -46,6 +47,24 @@ func GetFoodDistributionHistory(foodType string, userID int) ([]models.FoodDistr
 		return nil, err
 	}
 	return rows, nil
+}
+
+// GetLatestDistributionDate returns the most recent DistributedAt recorded for userID's
+// foodType (every row in a batch shares the same timestamp - see
+// CreateFoodDistributionBatch), used by handlers.RunCatchUpDeduction to tell whether
+// today's automatic deduction already happened.
+func GetLatestDistributionDate(userID int, foodType string) (time.Time, bool, error) {
+	var row models.FoodDistribution
+	err := DB.Where("user_id = ? AND food_type = ?", userID, foodType).
+		Order("distributed_at DESC").
+		First(&row).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return time.Time{}, false, nil
+		}
+		return time.Time{}, false, err
+	}
+	return row.DistributedAt, true, nil
 }
 
 // DeleteAllFoodDistribution wipes the entire food distribution history
