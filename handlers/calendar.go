@@ -113,7 +113,7 @@ func GetCalendarMarkersHandler(w http.ResponseWriter, r *http.Request) {
 	// ----- วัคซีน (คำนวณแบบเดียวกับ GetVaccineCalendarAlertsHandler ทุกประการ -
 	// ต่างแค่ตรงนี้คำนวณ is_overdue จริงๆ แทนที่จะ hardcode false) -----
 	var schedules []models.Vaccine
-	if err := database.DB.Find(&schedules).Error; err != nil {
+	if err := database.DB.Where("user_id = ?", userID).Find(&schedules).Error; err != nil {
 		log.Printf("[%s] %s - %d (Failed to retrieve schedules: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
 		http.Error(w, "Failed to retrieve schedules", http.StatusInternalServerError)
 		return
