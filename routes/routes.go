@@ -80,6 +80,9 @@ func SetupRoutes(db *gorm.DB) {
 	rg.GET("/api/foods/distribution", auth.RequireAuth(handlers.GetFoodDistributionHistoryHandler))
 	rg.DELETE("/api/foods/distribution", auth.RequireAuth(handlers.DeleteAllFoodDistributionHandler))
 
+	// Delete the caller's own records by category (used after "backup" -> "delete this data")
+	rg.POST("/api/data/purge", auth.RequireAuth(handlers.PurgeDataHandler))
+
 	// Food import lots (each lot adds onto foodstock automatically)
 	rg.POST("/api/importfoods", auth.RequireAuth(handlers.CreateImportFoodHandler))
 	rg.GET("/api/importfoods", auth.RequireAuth(handleImportFoodsGet))
