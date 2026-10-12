@@ -10,6 +10,7 @@ import (
 	"EZ-SmartFarm_BachN/auth"
 	"EZ-SmartFarm_BachN/database"
 	"EZ-SmartFarm_BachN/models"
+	"EZ-SmartFarm_BachN/services"
 	// 🔥 ลบ "gorm.io/gorm" ออกไปแล้ว เพราะเราใช้ผ่านแพ็กเกจ database แทน
 )
 
@@ -68,6 +69,9 @@ func SaveCoopLayoutHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to save layout: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// แจ้งบอร์ดของคอกนี้ว่าอุปกรณ์แต่ละชนิดอยู่ช่องไหน (ไม่ให้ response ช้าตาม MQTT)
+	go services.PublishSlotsForCoop(int32(coopID))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -230,6 +234,7 @@ func DeleteDeviceHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to delete device by slot: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		go services.PublishSlotsForCoop(int32(coopID))
 	} else if idStr != "" {
 		id, _ := strconv.Atoi(idStr)
 		if err := database.DeleteDevice(id, userID); err != nil {
