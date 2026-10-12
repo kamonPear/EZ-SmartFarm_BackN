@@ -125,9 +125,13 @@ func DeleteUser(userID int) error {
 	}
 
 	// everything owned by the user directly (not through a coop)
+	// device_type และ vaccine เป็นตารางที่ผูก user_id โดยตรงเหมือนกัน (เพิ่มทีหลัง
+	// ตอนทำให้ชนิดอุปกรณ์/ชนิดวัคซีนแยกต่อผู้ใช้ - ลืมเพิ่มเข้าลิสต์นี้ตอนนั้น ทำให้
+	// ลบ user ที่มีแถวในสองตารางนี้ไม่ได้เลย เจอ FK constraint ชนตอนลบ User ท้ายฟังก์ชัน)
 	userScoped := []interface{}{
 		&models.FarmThreshold{}, &models.FarmLayout{}, &models.Foodstock{},
 		&models.ImportFood{}, &models.FoodDistribution{},
+		&models.DeviceType{}, &models.Vaccine{},
 	}
 	for _, model := range userScoped {
 		if err := tx.Where("user_id = ?", userID).Delete(model).Error; err != nil {
