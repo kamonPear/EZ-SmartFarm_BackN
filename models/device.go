@@ -47,6 +47,9 @@ func (Device) TableName() string {
 type DevicePayload struct {
 	Name string `json:"name"`
 	Icon string `json:"icon"`
+	// เลขอุปกรณ์ที่ backend ออกให้แล้ว (device.slot_index) - ส่งมาเฉพาะอุปกรณ์ที่มีอยู่แล้วในคอก ให้ backend
+	// รู้ว่าเป็นตัวเดิม (คงเลขเดิม/อัปเดตตำแหน่ง) ถ้าไม่ส่ง = อุปกรณ์ใหม่ backend จะออกเลขถัดไปให้เอง
+	SlotIndex *int32 `json:"slot_index"`
 }
 
 type SlotPayload struct {

@@ -152,6 +152,13 @@ func MigrateModels(db *gorm.DB) error {
 	dedupeHealthRecords(db)
 	ensureUniqueIndex(db, "health", "uq_health_coop_date", "ALTER TABLE `health` ADD UNIQUE KEY `uq_health_coop_date` (`coop_id`, `date`)")
 
+	// ตัวนับเลขอุปกรณ์ต่อคอก (coop.next_device_no): ดันให้เกินเลขสูงสุดที่มีอยู่เสมอ (ทำซ้ำได้ ไม่ย้อนลง) เพราะคอก
+	// ที่มีอุปกรณ์อยู่ก่อนมีคอลัมน์นี้ต้องไม่ได้เลขซ้ำกับของเดิม แล้วกันเลขอุปกรณ์ซ้ำในคอกเดียวกันที่ระดับฐานข้อมูล
+	if err := db.Exec("UPDATE coop c SET c.next_device_no = GREATEST(c.next_device_no, COALESCE((SELECT MAX(d.slot_index) + 1 FROM device d WHERE d.coop_id = c.coop_id), 1))").Error; err != nil {
+		log.Printf("Warning: could not backfill coop.next_device_no: %v", err)
+	}
+	ensureUniqueIndex(db, "device", "uq_device_coop_slot", "ALTER TABLE `device` ADD UNIQUE KEY `uq_device_coop_slot` (`coop_id`, `slot_index`)")
+
 	fmt.Println("✓ All tables migrated successfully")
 	return nil
 }

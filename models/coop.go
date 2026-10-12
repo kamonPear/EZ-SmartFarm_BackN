@@ -17,6 +17,10 @@ type Coop struct {
 	PosX *float64 `gorm:"column:pos_x" json:"pos_x"`
 	PosY *float64 `gorm:"column:pos_y" json:"pos_y"`
 
+	// เลขอุปกรณ์ (device.slot_index) ที่จะให้ตัวถัดไปของคอกนี้ - เริ่ม 1 ต่อคอก วิ่งขึ้นเรื่อยๆ ไม่ใช้เลขที่เคย
+	// ออกไปแล้วซ้ำแม้อุปกรณ์นั้นจะถูกลบ (กันบอร์ดที่ยังส่งเลขเก่าเข้าผิดอุปกรณ์) ไม่ส่งออกทาง JSON
+	NextDeviceNo int `gorm:"column:next_device_no;type:int;not null;default:1" json:"-"`
+
 	// Relations (แก้โดยการลบ references:CoopID ออก)
 	Devices        []Device         `gorm:"foreignKey:CoopID" json:"devices,omitempty"`
 	Eggs           []Egg            `gorm:"foreignKey:CoopID" json:"eggs,omitempty"`
