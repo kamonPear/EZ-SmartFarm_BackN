@@ -44,6 +44,10 @@ func CreateEggHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Coop not found", http.StatusNotFound)
 			return
 		}
+		if tooYoung, ok := database.IsChickensTooYoung(err); ok {
+			http.Error(w, tooYoung.Error(), http.StatusUnprocessableEntity)
+			return
+		}
 		if database.IsDuplicateEggDate(err) {
 			http.Error(w, "Egg record for this coop and date already exists", http.StatusConflict)
 			return
@@ -202,6 +206,10 @@ func UpdateEggHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, database.ErrNotFound) {
 			http.Error(w, "Egg record not found", http.StatusNotFound)
+			return
+		}
+		if tooYoung, ok := database.IsChickensTooYoung(err); ok {
+			http.Error(w, tooYoung.Error(), http.StatusUnprocessableEntity)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)

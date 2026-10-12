@@ -73,6 +73,7 @@ func StartMQTTWorker() {
 		// ส่งค่ามาตรฐานล่าสุดให้ทุกคอกอีกรอบ (retained) กันกรณี broker ล้างค่าเก่าไป
 		// ทำใน goroutine เพราะห้ามรอ token ภายใน callback ของ paho
 		go PublishAllThresholds()
+		go PublishAllSlots()
 	})
 	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
 		fmt.Println("⚠️ [MQTT] Connection lost:", err)

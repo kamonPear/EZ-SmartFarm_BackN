@@ -1,9 +1,11 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"EZ-SmartFarm_BachN/models"
 
@@ -21,6 +23,45 @@ func IsDuplicateEggDate(err error) bool {
 	return strings.Contains(msg, "duplicate") && strings.Contains(msg, "coop_id")
 }
 
+// MinEggAgeMonths คืออายุไก่ขั้นต่ำ (เดือน นับจากวันเกิดไก่ของคอก) ก่อนจะบันทึกการเก็บไข่ได้
+const MinEggAgeMonths = 5
+
+// ChickensTooYoungError คือบันทึกไข่ของวันที่ไก่อายุยังไม่ถึง MinEggAgeMonths -
+// EligibleDate คือวันแรก (YYYY-MM-DD) ที่คอกนี้บันทึกไข่ได้
+type ChickensTooYoungError struct {
+	EligibleDate string
+}
+
+func (e *ChickensTooYoungError) Error() string {
+	return fmt.Sprintf("ไก่ยังอายุไม่ถึง %d เดือน เก็บไข่ได้ตั้งแต่วันที่ %s", MinEggAgeMonths, e.EligibleDate)
+}
+
+// IsChickensTooYoung reports whether err is a *ChickensTooYoungError
+func IsChickensTooYoung(err error) (*ChickensTooYoungError, bool) {
+	var tooYoung *ChickensTooYoungError
+	if errors.As(err, &tooYoung) {
+		return tooYoung, true
+	}
+	return nil, false
+}
+
+// checkChickensOldEnough ปฏิเสธการบันทึกไข่ของวันที่ก่อน (วันเกิดไก่ + MinEggAgeMonths เดือน)
+// คอกที่ไม่มีวันเกิดไก่ผ่านไปได้ (เช็กอายุไม่ได้)
+func checkChickensOldEnough(coopID int, collectDate time.Time) error {
+	var coop models.Coop
+	if err := DB.Select("coop_id", "birthday").First(&coop, coopID).Error; err != nil {
+		return err
+	}
+	if coop.Birthday.IsZero() {
+		return nil
+	}
+	eligible := models.DateKey(coop.Birthday.AddDate(0, MinEggAgeMonths, 0))
+	if models.DateKey(collectDate) < eligible {
+		return &ChickensTooYoungError{EligibleDate: eligible}
+	}
+	return nil
+}
+
 // CreateEgg creates a new egg record in the database, only if req.CoopID belongs to userID
 func CreateEgg(req *models.CreateEggRequest, userID int) (*models.Egg, error) {
 	owned, err := CoopBelongsToUser(req.CoopID, userID)
@@ -29,6 +70,10 @@ func CreateEgg(req *models.CreateEggRequest, userID int) (*models.Egg, error) {
 	}
 	if !owned {
 		return nil, ErrNotFound
+	}
+
+	if err := checkChickensOldEnough(req.CoopID, req.DateCollectEgg); err != nil {
+		return nil, err
 	}
 
 	egg := &models.Egg{
@@ -122,6 +167,21 @@ func UpdateEgg(eggID int, req *models.UpdateEggRequest, userID int) (*models.Egg
 		}
 		if !owned {
 			return nil, ErrNotFound
+		}
+	}
+
+	// ย้ายคอก/เปลี่ยนวัน ก็ต้องผ่านเกณฑ์อายุไก่ของ (คอก, วัน) ใหม่เช่นกัน
+	if req.CoopID > 0 || !req.DateCollectEgg.IsZero() {
+		targetCoop := egg.CoopID
+		if req.CoopID > 0 {
+			targetCoop = req.CoopID
+		}
+		targetDate := egg.DateCollectEgg
+		if !req.DateCollectEgg.IsZero() {
+			targetDate = req.DateCollectEgg
+		}
+		if err := checkChickensOldEnough(targetCoop, targetDate); err != nil {
+			return nil, err
 		}
 	}
 

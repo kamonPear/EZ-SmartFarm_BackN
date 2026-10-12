@@ -5,9 +5,15 @@ import (
 
 	"EZ-SmartFarm_BachN/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// SaveCoopLayout replaces every device slot for coopID, only if coopID belongs to userID
+// SaveCoopLayout บันทึกผังอุปกรณ์ของคอก (ต้องเป็นคอกของ userID) แบบ "ซิงก์":
+//   - อุปกรณ์ที่หน้าเว็บส่ง slot_index (เลขที่ backend เคยออกให้) มาด้วย = ตัวเดิม คงเลขเดิมและประวัติค่าเซนเซอร์ไว้
+//     แล้วอัปเดตแค่ชื่อ/ไอคอน/ตำแหน่ง
+//   - อุปกรณ์ที่ไม่ส่งเลขมา = ตัวใหม่ ได้เลขถัดไปของคอกนี้ (เริ่ม 1 ต่อคอก วิ่งขึ้นไม่ซ้ำ)
+//   - อุปกรณ์เดิมที่หายไปจากรายการ = ถูกเอาออก (ลบพร้อมประวัติค่าเซนเซอร์ของมัน)
+// slot.ID (เลขช่องกริดบนหน้าเว็บ) ไม่ถูกเก็บแล้ว ตำแหน่งจริงเก็บที่ pos_x/pos_y
 func SaveCoopLayout(coopID int, slots []models.SlotPayload, userID int) error {
 	owned, err := CoopBelongsToUser(coopID, userID)
 	if err != nil {
@@ -18,41 +24,94 @@ func SaveCoopLayout(coopID int, slots []models.SlotPayload, userID int) error {
 	}
 
 	return DB.Transaction(func(tx *gorm.DB) error {
-
-		if err := tx.Exec("DELETE FROM sensor_log WHERE device_id IN (SELECT device_id FROM device WHERE coop_id = ?)", coopID).Error; err != nil {
+		// ล็อกแถวคอกไว้ตลอดทรานแซกชัน กันสองคำขอบันทึกผังพร้อมกันได้เลขอุปกรณ์ซ้ำ
+		var coop models.Coop
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("coop_id", "next_device_no").First(&coop, coopID).Error; err != nil {
 			return err
 		}
 
-		if err := tx.Where("coop_id = ?", coopID).Delete(&models.Device{}).Error; err != nil {
+		var existing []models.Device
+		if err := tx.Where("coop_id = ?", coopID).Find(&existing).Error; err != nil {
 			return err
 		}
+		byNo := make(map[int32]models.Device, len(existing))
+		next := int32(coop.NextDeviceNo)
+		for _, d := range existing {
+			byNo[d.SlotIndex] = d
+			if d.SlotIndex >= next {
+				next = d.SlotIndex + 1
+			}
+		}
+		if next < 1 {
+			next = 1
+		}
 
+		kept := make(map[int32]bool)
 		for _, slot := range slots {
-			if slot.Device != nil {
-				deviceType := "Sensor"
-				if slot.Device.Name == "พัดลม" || slot.Device.Name == "หลอดไฟ" {
-					deviceType = "Actuator"
-				}
+			if slot.Device == nil {
+				continue
+			}
+			deviceType := "Sensor"
+			if slot.Device.Name == "พัดลม" || slot.Device.Name == "หลอดไฟ" {
+				deviceType = "Actuator"
+			}
 
-				newDevice := models.Device{
-					CoopID:        int32(coopID),
-					SlotIndex:     int32(slot.ID),
-					Name:          slot.Device.Name,
-					Icon:          slot.Device.Icon,
-					DeviceType:    deviceType,
-					CurrentStatus: "Offline",
-					LastUpdate:    time.Now(),
-					PosX:          slot.X,
-					PosY:          slot.Y,
+			// ตัวเดิม: มีเลขที่ตรงกับอุปกรณ์ที่มีอยู่ และยังไม่ถูกตัวอื่นในรายการเดียวกันอ้างไปก่อน
+			if slot.Device.SlotIndex != nil {
+				no := *slot.Device.SlotIndex
+				if cur, ok := byNo[no]; ok && !kept[no] {
+					updates := map[string]interface{}{
+						"name":        slot.Device.Name,
+						"icon":        slot.Device.Icon,
+						"device_type": deviceType,
+					}
+					if slot.X != nil {
+						updates["pos_x"] = *slot.X
+					}
+					if slot.Y != nil {
+						updates["pos_y"] = *slot.Y
+					}
+					if err := tx.Model(&models.Device{}).Where("device_id = ?", cur.DeviceID).Updates(updates).Error; err != nil {
+						return err
+					}
+					kept[no] = true
+					continue
 				}
+			}
 
-				if err := tx.Create(&newDevice).Error; err != nil {
-					return err
-				}
+			// ตัวใหม่: ออกเลขถัดไปของคอกนี้
+			newDevice := models.Device{
+				CoopID:        int32(coopID),
+				SlotIndex:     next,
+				Name:          slot.Device.Name,
+				Icon:          slot.Device.Icon,
+				DeviceType:    deviceType,
+				CurrentStatus: "Offline",
+				LastUpdate:    time.Now(),
+				PosX:          slot.X,
+				PosY:          slot.Y,
+			}
+			if err := tx.Create(&newDevice).Error; err != nil {
+				return err
+			}
+			next++
+		}
+
+		// ตัวเดิมที่หายไปจากรายการ = ถูกเอาออก (ลบประวัติค่าเซนเซอร์ของมันด้วย)
+		for _, d := range existing {
+			if kept[d.SlotIndex] {
+				continue
+			}
+			if err := tx.Exec("DELETE FROM sensor_log WHERE device_id = ?", d.DeviceID).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("device_id = ?", d.DeviceID).Delete(&models.Device{}).Error; err != nil {
+				return err
 			}
 		}
 
-		return nil
+		return tx.Model(&models.Coop{}).Where("coop_id = ?", coopID).Update("next_device_no", next).Error
 	})
 }
 
@@ -105,7 +164,11 @@ func CreateDevice(device *models.Device, userID int) error {
 	if device.CurrentStatus == "" {
 		device.CurrentStatus = "Offline"
 	}
-	return DB.Create(device).Error
+	if err := DB.Create(device).Error; err != nil {
+		return err
+	}
+	// ตัวนับเลขอุปกรณ์ของคอกต้องไม่ต่ำกว่าเลขที่เพิ่งใช้ (ผู้เรียกกำหนดเลขเอง) ไม่งั้นการบันทึกผังครั้งต่อไปอาจออกเลขซ้ำ
+	return DB.Exec("UPDATE coop SET next_device_no = GREATEST(next_device_no, ?) WHERE coop_id = ?", device.SlotIndex+1, device.CoopID).Error
 }
 
 // UpdateDevice updates an existing device, only if it (and any target coop) belongs to userID
