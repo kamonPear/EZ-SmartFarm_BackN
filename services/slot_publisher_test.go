@@ -1,6 +1,8 @@
 package services
 
 import (
+	"encoding/json"
+	"reflect"
 	"testing"
 
 	"EZ-SmartFarm_BachN/models"
@@ -9,23 +11,34 @@ import (
 func TestBuildSlotMap(t *testing.T) {
 	devices := []models.Device{
 		{Name: "DHT22", SlotIndex: 7},
-		{Name: "DHT22", SlotIndex: 4}, // ชนิดซ้ำ - ใช้ช่องน้อยสุด
+		{Name: "DHT22", SlotIndex: 4}, // เซนเซอร์ชนิดซ้ำ - ใช้ช่องน้อยสุด
 		{Name: "MQ-135", SlotIndex: 9},
 		{Name: "PIR MOTION", SlotIndex: 13},
-		{Name: "พัดลม", SlotIndex: 2},
+		{Name: "พัดลม", SlotIndex: 5},
+		{Name: "พัดลม", SlotIndex: 2}, // พัดลมหลายตัว - ส่งเป็น array เรียงจากน้อยไปมาก
+		{Name: "หลอดไฟ", SlotIndex: 18},
 		{Name: "หลอดไฟ", SlotIndex: 17},
 		{Name: "MC-38", SlotIndex: 5}, // บอร์ดยังไม่รองรับ - ต้องไม่อยู่ในผลลัพธ์
 	}
 	got := BuildSlotMap(devices)
-	want := map[string]int32{"dht": 4, "mq135": 9, "pir": 13, "fan": 2, "light": 17}
-	if len(got) != len(want) {
+	want := map[string]any{
+		"dht": int32(4), "mq135": int32(9), "pir": int32(13),
+		"fan": int32(2), "fans": []int32{2, 5},
+		"light": int32(17), "lights": []int32{17, 18},
+	}
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
-	for k, v := range want {
-		if got[k] != v {
-			t.Errorf("%s: got %d, want %d", k, got[k], v)
-		}
+
+	body, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
 	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("slot map should marshal to valid JSON: %v", err)
+	}
+
 	if len(BuildSlotMap(nil)) != 0 {
 		t.Error("empty coop should give an empty map")
 	}

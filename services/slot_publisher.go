@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -36,18 +37,43 @@ func slotKeyForName(name string) string {
 	return ""
 }
 
-// BuildSlotMap สรุปอุปกรณ์ของคอกเป็น {คีย์ชนิด: slot_index} ถ้าคอกมีชนิดเดียวกันหลายตัว
-// ใช้ตัวที่เลขช่องน้อยที่สุด (บอร์ดหนึ่งตัวรองรับเซนเซอร์ชนิดละหนึ่งตัว)
-func BuildSlotMap(devices []models.Device) map[string]int32 {
-	slots := make(map[string]int32)
+// BuildSlotMap สรุปอุปกรณ์ของคอกเป็น {คีย์ชนิด: slot_index}
+//   - เซนเซอร์ (dht, mq135, pir): ถ้าคอกมีชนิดเดียวกันหลายตัว ใช้ตัวที่เลขช่องน้อยที่สุด
+//   - พัดลม/หลอดไฟ: คอกหนึ่งมีได้หลายตัว ส่งเป็น array เรียงเลขช่องจากน้อยไปมาก
+//     ("fans": [1, 5], "lights": [17, 18]) ลำดับนี้ใช้จับคู่กับขารีเลย์ตามลำดับบนบอร์ด
+//     และยังส่งคีย์เดิม "fan"/"light" (ตัวที่เลขน้อยสุด) ไว้ให้เฟิร์มแวร์รุ่นเก่า
+func BuildSlotMap(devices []models.Device) map[string]any {
+	single := make(map[string]int32)
+	fans := []int32{}
+	lights := []int32{}
 	for _, d := range devices {
-		key := slotKeyForName(d.Name)
-		if key == "" {
+		switch key := slotKeyForName(d.Name); key {
+		case "":
 			continue
+		case "fan":
+			fans = append(fans, d.SlotIndex)
+		case "light":
+			lights = append(lights, d.SlotIndex)
+		default:
+			if existing, ok := single[key]; !ok || d.SlotIndex < existing {
+				single[key] = d.SlotIndex
+			}
 		}
-		if existing, ok := slots[key]; !ok || d.SlotIndex < existing {
-			slots[key] = d.SlotIndex
-		}
+	}
+
+	slots := make(map[string]any, len(single)+4)
+	for k, v := range single {
+		slots[k] = v
+	}
+	if len(fans) > 0 {
+		sort.Slice(fans, func(i, j int) bool { return fans[i] < fans[j] })
+		slots["fan"] = fans[0]
+		slots["fans"] = fans
+	}
+	if len(lights) > 0 {
+		sort.Slice(lights, func(i, j int) bool { return lights[i] < lights[j] })
+		slots["light"] = lights[0]
+		slots["lights"] = lights
 	}
 	return slots
 }
