@@ -18,11 +18,12 @@ func TestBuildSlotMap(t *testing.T) {
 		{Name: "พัดลม", SlotIndex: 2}, // พัดลมหลายตัว - ส่งเป็น array เรียงจากน้อยไปมาก
 		{Name: "หลอดไฟ", SlotIndex: 18},
 		{Name: "หลอดไฟ", SlotIndex: 17},
-		{Name: "MC-38", SlotIndex: 5}, // บอร์ดยังไม่รองรับ - ต้องไม่อยู่ในผลลัพธ์
+		{Name: "MC-38", SlotIndex: 5},   // ชนิดใหม่ - ส่งต่อด้วยคีย์จากชื่อ บอร์ดที่ไม่รู้จักจะข้ามเอง
+		{Name: "เซนเซอร์ใหม่", SlotIndex: 6}, // ชื่อไทยที่ไม่รู้จัก - สร้างคีย์ไม่ได้ ต้องไม่อยู่ในผลลัพธ์
 	}
 	got := BuildSlotMap(devices)
 	want := map[string]any{
-		"dht": int32(4), "mq135": int32(9), "pir": int32(13),
+		"dht": int32(4), "mq135": int32(9), "pir": int32(13), "mc38": int32(5),
 		"fan": int32(2), "fans": []int32{2, 5},
 		"light": int32(17), "lights": []int32{17, 18},
 	}
