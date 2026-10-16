@@ -39,6 +39,7 @@ func GetCoopFoodConsumptionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cfg := loadFoodAgeConfig(userID)
 	now := time.Now()
 	result := make([]models.CoopFoodConsumption, 0, len(coops))
 	for _, coop := range coops {
@@ -58,7 +59,7 @@ func GetCoopFoodConsumptionHandler(w http.ResponseWriter, r *http.Request) {
 		if ageWeeks < 0 {
 			ageWeeks = 0
 		}
-		foodType := models.FoodTypeForAgeWeeks(ageWeeks)
+		foodType := cfg.FoodTypeForAge(ageWeeks)
 
 		result = append(result, models.CoopFoodConsumption{
 			CoopID:            coop.CoopID,
