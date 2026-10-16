@@ -220,13 +220,23 @@ var FoodConsumptionKgPerBirdPerDay = map[string]float64{
 	models.FoodTypeLargePellet: 0.13, // ไก่อายุ 14 สัปดาห์ขึ้นไป ~130 กรัม/ตัว/วัน
 }
 
+// loadFoodAgeConfig คืนช่วงอายุ→ประเภทอาหารของผู้ใช้ (ใช้ค่าเริ่มต้น 0-14/14+ ถ้ายังไม่ตั้ง
+// หรืออ่านไม่ได้) เพื่อไม่ให้การคำนวณยอดตัดสต็อกล้มทั้งก้อนเพราะอ่าน config พลาด
+func loadFoodAgeConfig(userID int) models.FoodAgeConfig {
+	cfg, err := database.GetFoodAgeConfig(userID)
+	if err != nil || cfg == nil {
+		return models.DefaultFoodAgeConfig(userID)
+	}
+	return *cfg
+}
+
 // ComputeDailyFoodConsumptionByCoop คืนยอดกก./วันของอาหารประเภท foodType แยกเป็น
 // รายคอก (เฉพาะคอกที่กำลังกินอาหารประเภทนี้อยู่จริง) - อิงจากจำนวนไก่จริงต่อคอก
 // (coop.Amount) คูณอัตรากก./ตัว/วันของช่วงอายุคอกนั้น (ตัดสินจาก Birthday ว่าอยู่
 // ช่วงเม็ดเล็ก/เม็ดใหญ่) ใช้ทั้งเป็นยอดตัดสต็อกรวม (sum ของผลลัพธ์นี้) และเป็น
 // breakdown ที่บันทึกลง food_distribution ทุกครั้งที่ตัดสต็อกอัตโนมัติ เพื่อให้หน้า
 // "สรุปผลอาหารแต่ละประเภท" ยังเห็นว่าคอกไหนกินไปเท่าไรได้ แม้ไม่มีใครกรอกเอง
-func ComputeDailyFoodConsumptionByCoop(coops []models.Coop, foodType string) []models.FoodDistributionItem {
+func ComputeDailyFoodConsumptionByCoop(coops []models.Coop, foodType string, cfg models.FoodAgeConfig) []models.FoodDistributionItem {
 	now := time.Now()
 	items := make([]models.FoodDistributionItem, 0, len(coops))
 	for _, coop := range coops {
@@ -237,7 +247,7 @@ func ComputeDailyFoodConsumptionByCoop(coops []models.Coop, foodType string) []m
 		if ageWeeks < 0 {
 			ageWeeks = 0
 		}
-		if models.FoodTypeForAgeWeeks(ageWeeks) != foodType {
+		if cfg.FoodTypeForAge(ageWeeks) != foodType {
 			continue
 		}
 		kg := float64(coop.Amount) * FoodConsumptionKgPerBirdPerDay[foodType]
@@ -254,9 +264,9 @@ func ComputeDailyFoodConsumptionByCoop(coops []models.Coop, foodType string) []m
 // ใช้ร่วมกันทั้งตัวตัดสต็อกแมนนวล (ForceDeductStockHandler), Cron ตัดสต็อกประจำวัน
 // (scheduler.SetupJobs) และตัวประมาณการต่อคอกที่โชว์ในหน้าคลังอาหาร (GetCoopFoodConsumptionHandler)
 // เพื่อให้ตัวเลขตรงกันทุกจุด
-func ComputeDailyFoodConsumption(coops []models.Coop, foodType string) float64 {
+func ComputeDailyFoodConsumption(coops []models.Coop, foodType string, cfg models.FoodAgeConfig) float64 {
 	var total float64
-	for _, item := range ComputeDailyFoodConsumptionByCoop(coops, foodType) {
+	for _, item := range ComputeDailyFoodConsumptionByCoop(coops, foodType, cfg) {
 		total += item.KgGiven
 	}
 	return total
@@ -274,9 +284,10 @@ func RunDailyDeductionForAllUsers() (deductedUsers int, err error) {
 	}
 
 	for userID, coops := range coopsByUser {
+		cfg := loadFoodAgeConfig(userID)
 		userDeducted := false
 		for _, foodType := range []string{models.FoodTypeSmallPellet, models.FoodTypeLargePellet} {
-			items := ComputeDailyFoodConsumptionByCoop(coops, foodType)
+			items := ComputeDailyFoodConsumptionByCoop(coops, foodType, cfg)
 			var amount float64
 			for _, item := range items {
 				amount += item.KgGiven
@@ -355,6 +366,7 @@ func RunCatchUpDeduction(userID int) {
 		return
 	}
 
+	cfg := loadFoodAgeConfig(userID)
 	for _, foodType := range []string{models.FoodTypeSmallPellet, models.FoodTypeLargePellet} {
 		lastDate, found, err := database.GetLatestDistributionDate(userID, foodType)
 		if err != nil {
@@ -365,7 +377,7 @@ func RunCatchUpDeduction(userID int) {
 			continue // ตัดไปแล้ววันนี้ (จาก cron หรือเปิดหน้านี้รอบก่อนของวันเดียวกัน)
 		}
 
-		items := ComputeDailyFoodConsumptionByCoop(coops, foodType)
+		items := ComputeDailyFoodConsumptionByCoop(coops, foodType, cfg)
 		var amount float64
 		for _, item := range items {
 			amount += item.KgGiven
@@ -430,7 +442,7 @@ func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := ComputeDailyFoodConsumptionByCoop(coops, req.FoodType)
+	items := ComputeDailyFoodConsumptionByCoop(coops, req.FoodType, loadFoodAgeConfig(userID))
 	var amount float64
 	for _, item := range items {
 		amount += item.KgGiven

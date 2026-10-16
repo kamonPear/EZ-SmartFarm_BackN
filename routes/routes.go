@@ -54,6 +54,8 @@ func SetupRoutes(db *gorm.DB) {
 	// showed different values); now backed by the DB so both stay in sync
 	rg.GET("/api/farm-threshold", auth.RequireAuth(handlers.GetFarmThresholdHandler))
 	rg.PUT("/api/farm-threshold", auth.RequireAuth(handlers.UpdateFarmThresholdHandler))
+	rg.GET("/api/food-age-config", auth.RequireAuth(handlers.GetFoodAgeConfigHandler))
+	rg.PUT("/api/food-age-config", auth.RequireAuth(handlers.UpdateFoodAgeConfigHandler))
 
 	// Eggs
 	rg.POST("/api/eggs", auth.RequireAuth(handlers.CreateEggHandler))
