@@ -13,19 +13,6 @@ func IsValidFoodType(foodType string) bool {
 	return foodType == FoodTypeSmallPellet || foodType == FoodTypeLargePellet
 }
 
-// AgeThresholdWeeksSmallToLarge is the chicken age (in weeks) at which a coop switches
-// from small pellet to large pellet feed.
-const AgeThresholdWeeksSmallToLarge = 14
-
-// FoodTypeForAgeWeeks returns which food type a coop should currently be fed, based on
-// the age (in weeks) of the chickens raised there.
-func FoodTypeForAgeWeeks(ageWeeks int) string {
-	if ageWeeks < AgeThresholdWeeksSmallToLarge {
-		return FoodTypeSmallPellet
-	}
-	return FoodTypeLargePellet
-}
-
 // Foodstock represents the current running total of food in stock, kept up to date
 // automatically. There is one row per FoodType (small pellet / large pellet).
 type Foodstock struct {

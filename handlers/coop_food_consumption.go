@@ -12,9 +12,9 @@ import (
 )
 
 // GetCoopFoodConsumptionHandler estimates how many kg of food each coop eats per day.
-// Each coop's food type is decided by the age of its chickens (models.FoodTypeForAgeWeeks),
+// Each coop's food type is decided by the age of its chickens (the owner's FoodAgeConfig),
 // and the estimate is a direct headcount calculation (coop.Amount x
-// FoodConsumptionKgPerBirdPerDay[foodType]) - the same formula ComputeDailyFoodConsumption
+// configured grams per bird) - the same formula ComputeDailyFoodConsumption
 // uses for the real automatic deduction, so what's shown here always matches what actually
 // gets deducted (no per-coop feed sensor exists, so this is still an estimate, just no
 // longer a proportional split of an artificial fixed pool).
@@ -59,7 +59,8 @@ func GetCoopFoodConsumptionHandler(w http.ResponseWriter, r *http.Request) {
 		if ageWeeks < 0 {
 			ageWeeks = 0
 		}
-		foodType := cfg.FoodTypeForAge(ageWeeks)
+		foodType, kgPerDay := cfg.CoopFeed(ageWeeks, coop.Amount)
+		minWeeks, maxWeeks := cfg.AgeRangeFor(foodType)
 
 		result = append(result, models.CoopFoodConsumption{
 			CoopID:            coop.CoopID,
@@ -67,7 +68,10 @@ func GetCoopFoodConsumptionHandler(w http.ResponseWriter, r *http.Request) {
 			Amount:            coop.Amount,
 			AgeWeeks:          ageWeeks,
 			FoodType:          foodType,
-			EstimatedKgPerDay: float64(coop.Amount) * FoodConsumptionKgPerBirdPerDay[foodType],
+			EstimatedKgPerDay: kgPerDay,
+			AgeMinWeeks:       minWeeks,
+			AgeMaxWeeks:       maxWeeks,
+			GramsPerBird:      cfg.GramsPerBirdFor(foodType),
 		})
 	}
 

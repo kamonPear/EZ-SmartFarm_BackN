@@ -211,21 +211,13 @@ func GetFoodHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(history)
 }
 
-// FoodConsumptionKgPerBirdPerDay คือกก./ตัว/วัน ที่ไก่ 1 ตัวกินอาหารแต่ละประเภท
-// (ประมาณการตามช่วงอายุ - ไก่เล็กกินน้อยกว่าไก่โต) ใช้คูณกับจำนวนไก่จริงของแต่ละ
-// คอก (coop.Amount) เพื่อคำนวณยอดตัดสต็อกจริงของผู้ใช้แต่ละคน แทนที่ค่าคงที่ตายตัว
-// แบบเดิม (DailyDeductAmounts) ที่ตัดเท่ากันทุกบัญชีไม่ว่าจะเลี้ยงไก่กี่ตัวก็ตาม
-var FoodConsumptionKgPerBirdPerDay = map[string]float64{
-	models.FoodTypeSmallPellet: 0.06, // ไก่อายุ 0-14 สัปดาห์ ~60 กรัม/ตัว/วัน
-	models.FoodTypeLargePellet: 0.13, // ไก่อายุ 14 สัปดาห์ขึ้นไป ~130 กรัม/ตัว/วัน
-}
-
-// loadFoodAgeConfig คืนช่วงอายุ→ประเภทอาหารของผู้ใช้ (ใช้ค่าเริ่มต้น 0-14/14+ ถ้ายังไม่ตั้ง
-// หรืออ่านไม่ได้) เพื่อไม่ให้การคำนวณยอดตัดสต็อกล้มทั้งก้อนเพราะอ่าน config พลาด
+// loadFoodAgeConfig คืนกติกาการให้อาหารที่เจ้าของฟาร์มตั้งไว้ในฐานข้อมูล (ช่วงอายุ→ประเภท
+// อาหาร และกรัม/ตัว/วัน) ถ้ายังไม่ได้ตั้งหรืออ่านไม่ได้จะคืนค่าว่าง (Configured=false) ซึ่ง
+// ทำให้ไม่มีคอกไหนถูกคำนวณ/ตัดสต็อก - ไม่มีค่าตายตัวในโค้ดอีกต่อไป
 func loadFoodAgeConfig(userID int) models.FoodAgeConfig {
 	cfg, err := database.GetFoodAgeConfig(userID)
 	if err != nil || cfg == nil {
-		return models.DefaultFoodAgeConfig(userID)
+		return models.FoodAgeConfig{UserID: userID}
 	}
 	return *cfg
 }
@@ -247,10 +239,10 @@ func ComputeDailyFoodConsumptionByCoop(coops []models.Coop, foodType string, cfg
 		if ageWeeks < 0 {
 			ageWeeks = 0
 		}
-		if cfg.FoodTypeForAge(ageWeeks) != foodType {
+		coopFoodType, kg := cfg.CoopFeed(ageWeeks, coop.Amount)
+		if coopFoodType != foodType {
 			continue
 		}
-		kg := float64(coop.Amount) * FoodConsumptionKgPerBirdPerDay[foodType]
 		if kg <= 0 {
 			continue
 		}
