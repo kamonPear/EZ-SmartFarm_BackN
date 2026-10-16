@@ -10,9 +10,9 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// GetFoodAgeConfigHandler returns the caller's food-type age ranges (default if unset)
-// GET /api/food-age-config
-func GetFoodAgeConfigHandler(w http.ResponseWriter, r *http.Request) {
+// GetFoodAgeRulesHandler returns the caller's feeding table (empty list if none yet)
+// GET /api/food-age-rules
+func GetFoodAgeRulesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -22,19 +22,19 @@ func GetFoodAgeConfigHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	cfg, err := database.GetFoodAgeConfig(userID)
+	rules, err := database.GetFoodAgeRules(userID)
 	if err != nil {
-		http.Error(w, "Failed to fetch food age config", http.StatusInternalServerError)
+		http.Error(w, "Failed to fetch food age rules", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(cfg)
+	json.NewEncoder(w).Encode(rules)
 }
 
-// UpdateFoodAgeConfigHandler saves the caller's food-type age ranges
-// PUT /api/food-age-config
-// body: {"small_min_weeks":0,"small_max_weeks":14,"large_min_weeks":14,"large_max_weeks":0}
-func UpdateFoodAgeConfigHandler(w http.ResponseWriter, r *http.Request) {
+// UpdateFoodAgeRulesHandler replaces the caller's whole feeding table
+// PUT /api/food-age-rules
+// body: {"rules":[{"food_type":"เม็ดเล็ก","min_weeks":0,"max_weeks":14,"grams_per_bird":60}, ...]}
+func UpdateFoodAgeRulesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -44,7 +44,7 @@ func UpdateFoodAgeConfigHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	var req models.UpdateFoodAgeConfigRequest
+	var req models.UpdateFoodAgeRulesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
@@ -53,12 +53,12 @@ func UpdateFoodAgeConfigHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, msg, http.StatusBadRequest)
 		return
 	}
-	cfg, err := database.UpdateFoodAgeConfig(&req, userID)
+	rules, err := database.ReplaceFoodAgeRules(userID, req.Rules)
 	if err != nil {
-		http.Error(w, "Failed to save food age config", http.StatusInternalServerError)
+		http.Error(w, "Failed to save food age rules", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("[%s] %s - %d ✓ Food age config saved for user %d", r.Method, r.RequestURI, http.StatusOK, userID)
+	log.Printf("[%s] %s - %d ✓ Saved %d food age rules for user %d", r.Method, r.RequestURI, http.StatusOK, len(rules), userID)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(cfg)
+	json.NewEncoder(w).Encode(rules)
 }

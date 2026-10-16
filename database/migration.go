@@ -61,7 +61,7 @@ func MigrateModels(db *gorm.DB) error {
 		&models.VaccineHistory{},
 		&models.HealthAppointment{},
 		&models.FarmThreshold{},
-		&models.FoodAgeConfig{},
+		&models.FoodAgeRule{},
 		&models.DeviceType{},
 	); err != nil {
 		// AutoMigrate can fail partway through (e.g. a pre-existing FK type mismatch on
