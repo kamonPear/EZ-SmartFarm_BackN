@@ -12,7 +12,7 @@ import (
 )
 
 // GetCoopFoodConsumptionHandler estimates how many kg of food each coop eats per day.
-// Each coop's food type is decided by the age of its chickens (the owner's FoodAgeConfig),
+// Each coop's food type is decided by the age of its chickens (the owner's food age rules),
 // and the estimate is a direct headcount calculation (coop.Amount x
 // configured grams per bird) - the same formula ComputeDailyFoodConsumption
 // uses for the real automatic deduction, so what's shown here always matches what actually
@@ -39,7 +39,7 @@ func GetCoopFoodConsumptionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg := loadFoodAgeConfig(userID)
+	rules := loadFoodAgeRules(userID)
 	now := time.Now()
 	result := make([]models.CoopFoodConsumption, 0, len(coops))
 	for _, coop := range coops {
@@ -59,8 +59,12 @@ func GetCoopFoodConsumptionHandler(w http.ResponseWriter, r *http.Request) {
 		if ageWeeks < 0 {
 			ageWeeks = 0
 		}
-		foodType, kgPerDay := cfg.CoopFeed(ageWeeks, coop.Amount)
-		minWeeks, maxWeeks := cfg.AgeRangeFor(foodType)
+		foodType, kgPerDay, rule := rules.CoopFeed(ageWeeks, coop.Amount)
+		var minWeeks, maxWeeks int
+		var gramsPerBird float64
+		if rule != nil {
+			minWeeks, maxWeeks, gramsPerBird = rule.MinWeeks, rule.MaxWeeks, rule.GramsPerBird
+		}
 
 		result = append(result, models.CoopFoodConsumption{
 			CoopID:            coop.CoopID,
@@ -71,7 +75,7 @@ func GetCoopFoodConsumptionHandler(w http.ResponseWriter, r *http.Request) {
 			EstimatedKgPerDay: kgPerDay,
 			AgeMinWeeks:       minWeeks,
 			AgeMaxWeeks:       maxWeeks,
-			GramsPerBird:      cfg.GramsPerBirdFor(foodType),
+			GramsPerBird:      gramsPerBird,
 		})
 	}
 

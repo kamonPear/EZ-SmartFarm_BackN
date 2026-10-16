@@ -2,7 +2,7 @@ package models
 
 // CoopFoodConsumption represents the estimated daily food consumption of a single coop.
 // The estimate is derived from the chickens' age (which decides FoodType) and the coop's
-// own headcount (Amount x the owner's configured grams per bird, FoodAgeConfig.CoopFeed) - there is
+// own headcount (Amount x the owner's configured grams per bird, FoodRules.CoopFeed) - there is
 // no per-coop feed sensor, so this is still an estimate, not a measured value, but it is
 // the same formula actually used to deduct stock (handlers.ComputeDailyFoodConsumption).
 type CoopFoodConsumption struct {

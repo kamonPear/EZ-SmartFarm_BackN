@@ -211,15 +211,15 @@ func GetFoodHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(history)
 }
 
-// loadFoodAgeConfig คืนกติกาการให้อาหารที่เจ้าของฟาร์มตั้งไว้ในฐานข้อมูล (ช่วงอายุ→ประเภท
-// อาหาร และกรัม/ตัว/วัน) ถ้ายังไม่ได้ตั้งหรืออ่านไม่ได้จะคืนค่าว่าง (Configured=false) ซึ่ง
-// ทำให้ไม่มีคอกไหนถูกคำนวณ/ตัดสต็อก - ไม่มีค่าตายตัวในโค้ดอีกต่อไป
-func loadFoodAgeConfig(userID int) models.FoodAgeConfig {
-	cfg, err := database.GetFoodAgeConfig(userID)
-	if err != nil || cfg == nil {
-		return models.FoodAgeConfig{UserID: userID}
+// loadFoodAgeRules คืนตารางการให้อาหารที่เจ้าของฟาร์มกรอกไว้ในฐานข้อมูล (ช่วงอายุ → ประเภท
+// อาหาร + กรัม/ตัว/วัน) ถ้ายังไม่ได้กรอกหรืออ่านไม่ได้จะคืนตารางว่าง ซึ่งทำให้ไม่มีคอกไหน
+// ถูกคำนวณ/ตัดสต็อก - ไม่มีค่าตายตัวในโค้ดอีกต่อไป
+func loadFoodAgeRules(userID int) models.FoodRules {
+	rules, err := database.GetFoodAgeRules(userID)
+	if err != nil {
+		return models.FoodRules{}
 	}
-	return *cfg
+	return rules
 }
 
 // ComputeDailyFoodConsumptionByCoop คืนยอดกก./วันของอาหารประเภท foodType แยกเป็น
@@ -228,7 +228,7 @@ func loadFoodAgeConfig(userID int) models.FoodAgeConfig {
 // ช่วงเม็ดเล็ก/เม็ดใหญ่) ใช้ทั้งเป็นยอดตัดสต็อกรวม (sum ของผลลัพธ์นี้) และเป็น
 // breakdown ที่บันทึกลง food_distribution ทุกครั้งที่ตัดสต็อกอัตโนมัติ เพื่อให้หน้า
 // "สรุปผลอาหารแต่ละประเภท" ยังเห็นว่าคอกไหนกินไปเท่าไรได้ แม้ไม่มีใครกรอกเอง
-func ComputeDailyFoodConsumptionByCoop(coops []models.Coop, foodType string, cfg models.FoodAgeConfig) []models.FoodDistributionItem {
+func ComputeDailyFoodConsumptionByCoop(coops []models.Coop, foodType string, rules models.FoodRules) []models.FoodDistributionItem {
 	now := time.Now()
 	items := make([]models.FoodDistributionItem, 0, len(coops))
 	for _, coop := range coops {
@@ -239,7 +239,7 @@ func ComputeDailyFoodConsumptionByCoop(coops []models.Coop, foodType string, cfg
 		if ageWeeks < 0 {
 			ageWeeks = 0
 		}
-		coopFoodType, kg := cfg.CoopFeed(ageWeeks, coop.Amount)
+		coopFoodType, kg, _ := rules.CoopFeed(ageWeeks, coop.Amount)
 		if coopFoodType != foodType {
 			continue
 		}
@@ -256,9 +256,9 @@ func ComputeDailyFoodConsumptionByCoop(coops []models.Coop, foodType string, cfg
 // ใช้ร่วมกันทั้งตัวตัดสต็อกแมนนวล (ForceDeductStockHandler), Cron ตัดสต็อกประจำวัน
 // (scheduler.SetupJobs) และตัวประมาณการต่อคอกที่โชว์ในหน้าคลังอาหาร (GetCoopFoodConsumptionHandler)
 // เพื่อให้ตัวเลขตรงกันทุกจุด
-func ComputeDailyFoodConsumption(coops []models.Coop, foodType string, cfg models.FoodAgeConfig) float64 {
+func ComputeDailyFoodConsumption(coops []models.Coop, foodType string, rules models.FoodRules) float64 {
 	var total float64
-	for _, item := range ComputeDailyFoodConsumptionByCoop(coops, foodType, cfg) {
+	for _, item := range ComputeDailyFoodConsumptionByCoop(coops, foodType, rules) {
 		total += item.KgGiven
 	}
 	return total
@@ -276,10 +276,10 @@ func RunDailyDeductionForAllUsers() (deductedUsers int, err error) {
 	}
 
 	for userID, coops := range coopsByUser {
-		cfg := loadFoodAgeConfig(userID)
+		rules := loadFoodAgeRules(userID)
 		userDeducted := false
 		for _, foodType := range []string{models.FoodTypeSmallPellet, models.FoodTypeLargePellet} {
-			items := ComputeDailyFoodConsumptionByCoop(coops, foodType, cfg)
+			items := ComputeDailyFoodConsumptionByCoop(coops, foodType, rules)
 			var amount float64
 			for _, item := range items {
 				amount += item.KgGiven
@@ -358,7 +358,7 @@ func RunCatchUpDeduction(userID int) {
 		return
 	}
 
-	cfg := loadFoodAgeConfig(userID)
+	rules := loadFoodAgeRules(userID)
 	for _, foodType := range []string{models.FoodTypeSmallPellet, models.FoodTypeLargePellet} {
 		lastDate, found, err := database.GetLatestDistributionDate(userID, foodType)
 		if err != nil {
@@ -369,7 +369,7 @@ func RunCatchUpDeduction(userID int) {
 			continue // ตัดไปแล้ววันนี้ (จาก cron หรือเปิดหน้านี้รอบก่อนของวันเดียวกัน)
 		}
 
-		items := ComputeDailyFoodConsumptionByCoop(coops, foodType, cfg)
+		items := ComputeDailyFoodConsumptionByCoop(coops, foodType, rules)
 		var amount float64
 		for _, item := range items {
 			amount += item.KgGiven
@@ -434,7 +434,7 @@ func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items := ComputeDailyFoodConsumptionByCoop(coops, req.FoodType, loadFoodAgeConfig(userID))
+	items := ComputeDailyFoodConsumptionByCoop(coops, req.FoodType, loadFoodAgeRules(userID))
 	var amount float64
 	for _, item := range items {
 		amount += item.KgGiven
