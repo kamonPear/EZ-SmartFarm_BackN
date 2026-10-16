@@ -13,6 +13,10 @@ type FoodAgeConfig struct {
 	SmallMaxWeeks int `gorm:"column:small_max_weeks;type:int;not null" json:"small_max_weeks"`
 	LargeMinWeeks int `gorm:"column:large_min_weeks;type:int;not null" json:"large_min_weeks"`
 	LargeMaxWeeks int `gorm:"column:large_max_weeks;type:int;not null" json:"large_max_weeks"`
+	// Configured is false when the owner has never saved a config (the values above are
+	// then just the fallback rule used for calculations, not something they chose) so the
+	// UI can show empty fields instead of pre-filled numbers. Not stored in the table.
+	Configured bool `gorm:"-" json:"configured"`
 }
 
 // TableName specifies the table name for FoodAgeConfig model

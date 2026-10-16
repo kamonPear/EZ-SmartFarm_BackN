@@ -14,6 +14,7 @@ func GetFoodAgeConfig(userID int) (*models.FoodAgeConfig, error) {
 	var cfg models.FoodAgeConfig
 	err := DB.Where("user_id = ?", userID).First(&cfg).Error
 	if err == nil {
+		cfg.Configured = true
 		return &cfg, nil
 	}
 	if err != gorm.ErrRecordNotFound {
@@ -43,5 +44,6 @@ func UpdateFoodAgeConfig(req *models.UpdateFoodAgeConfigRequest, userID int) (*m
 		log.Printf("Error saving food age config: %v", err)
 		return nil, err
 	}
+	cfg.Configured = true
 	return &cfg, nil
 }
