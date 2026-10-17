@@ -10,7 +10,7 @@ type FoodDistribution struct {
 	UserID         int       `gorm:"column:user_id;type:int;size:32;index" json:"user_id"`
 	FoodType       string    `gorm:"column:food_type;type:varchar(20);not null;index" json:"food_type"`
 	CoopID         int       `gorm:"column:coop_id;not null;type:int" json:"coop_id"`
-	KgGiven        float64   `gorm:"column:kg_given;type:decimal(10,2);not null" json:"kg_given"`
+	KgGiven        float64   `gorm:"column:kg_given;type:decimal(10,4);not null" json:"kg_given"`
 	DistributedAt  time.Time `gorm:"column:distributed_at;not null" json:"distributed_at"`
 
 	Coop Coop `gorm:"foreignKey:CoopID;constraint:-" json:"coop,omitempty"`
