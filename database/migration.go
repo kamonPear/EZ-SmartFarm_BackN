@@ -85,6 +85,10 @@ func MigrateModels(db *gorm.DB) error {
 	// ตอนวางอุปกรณ์ลงคอก ถ้าคอลัมน์ยังแคบอยู่จะ insert/update ไม่ผ่านแบบเงียบๆ เหมือนกัน
 	ensureColumnIsText(db, "device", "icon")
 
+	// food_distribution.kg_given was DECIMAL(10,2): one chick eats ~0.0006 kg/day, so small
+	// coops were stored as 0.00. Widen to 4 decimals (existing values are kept as-is).
+	ensureDecimalScale(db, "food_distribution", "kg_given", "DECIMAL(10,4) NOT NULL", 4)
+
 	// name_coop is a secondary key added alongside the existing id-based FKs.
 	// AutoMigrate doesn't manage this on its own, so add it explicitly and idempotently.
 	// ⛔ เดิมตั้งเป็น unique เดี่ยวๆ แค่ name_coop ทำให้ชื่อคอกต้องไม่ซ้ำกับ "ทุก
@@ -422,6 +426,25 @@ func ensureColumnIsText(db *gorm.DB, table, column string) {
 	}
 	if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` TEXT NOT NULL", table, column)).Error; err != nil {
 		log.Printf("Warning: could not widen column %s.%s to TEXT: %v", table, column, err)
+	}
+}
+
+// ensureDecimalScale widens a DECIMAL column to at least wantScale decimal places using
+// the given column definition. A no-op once the column already has that scale.
+func ensureDecimalScale(db *gorm.DB, table, column, definition string, wantScale int) {
+	var scale *int
+	if err := db.Raw(
+		"SELECT NUMERIC_SCALE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+		table, column,
+	).Scan(&scale).Error; err != nil {
+		log.Printf("Warning: could not check column scale %s.%s: %v", table, column, err)
+		return
+	}
+	if scale == nil || *scale >= wantScale {
+		return
+	}
+	if err := db.Exec(fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` %s", table, column, definition)).Error; err != nil {
+		log.Printf("Warning: could not widen column %s.%s: %v", table, column, err)
 	}
 }
 
