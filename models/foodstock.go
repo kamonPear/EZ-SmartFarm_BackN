@@ -21,6 +21,9 @@ type Foodstock struct {
 	FoodType        string    `gorm:"column:food_type;type:varchar(20);uniqueIndex:uq_foodstock_type_user" json:"food_type"`
 	QuantityCurrent float64   `gorm:"column:quantity_current;type:decimal(10,2);check:quantity_current >= 0" json:"quantity_current"`
 	DateUp          time.Time `gorm:"column:date_up;type:date;not null" json:"date_up"`
+	// MinQuantity คือปริมาณที่เจ้าของฟาร์มกำหนดเอง - สต็อกเหลือน้อยกว่าหรือเท่านี้ (กก.)
+	// แอปจะแจ้งเตือน "ใกล้หมด" 0 = ไม่ได้ตั้ง (ไม่แจ้งเตือนใกล้หมด แจ้งเฉพาะตอนหมด)
+	MinQuantity float64 `gorm:"column:min_quantity;type:decimal(10,2);not null;default:0" json:"min_quantity"`
 }
 
 // TableName specifies the table name for Foodstock model

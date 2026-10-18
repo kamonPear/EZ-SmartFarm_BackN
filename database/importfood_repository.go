@@ -30,6 +30,13 @@ func CreateImportFood(req *models.CreateImportFoodRequest, userID int) (*models.
 		return nil, err
 	}
 
+	if req.MinQuantity != nil && *req.MinQuantity >= 0 {
+		if _, err := SetFoodMinQuantity(userID, req.FoodType, *req.MinQuantity); err != nil {
+			// the stock itself was already added; failing to save the threshold shouldn't undo that
+			log.Printf("Warning: could not save min quantity after import: %v", err)
+		}
+	}
+
 	log.Printf("✓ Import food lot #%d created (%s +%d kg) for user %d\n", lot.LotID, req.FoodType, req.ImportVolume, userID)
 	return lot, nil
 }

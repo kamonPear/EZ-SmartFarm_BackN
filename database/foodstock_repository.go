@@ -61,6 +61,24 @@ func UpdateFoodstock(id int, req *models.UpdateFoodstockRequest, userID int) (*m
 	return &foodstock, nil
 }
 
+// SetFoodMinQuantity sets the owner-defined low-stock threshold for userID's row of
+// foodType. The row must already exist (it's created by the first import of that type).
+func SetFoodMinQuantity(userID int, foodType string, minQuantity float64) (*models.Foodstock, error) {
+	var foodstock models.Foodstock
+	if err := DB.Where("food_type = ? AND user_id = ?", foodType, userID).First(&foodstock).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	if err := DB.Model(&foodstock).Update("min_quantity", minQuantity).Error; err != nil {
+		return nil, err
+	}
+	foodstock.MinQuantity = minQuantity
+	return &foodstock, nil
+}
+
 // DeleteFoodstock deletes a foodstock row, only if it's owned by userID
 func DeleteFoodstock(foodID int, userID int) error {
 	foodstock, err := GetFoodstockByID(foodID, userID)

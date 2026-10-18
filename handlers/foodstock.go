@@ -138,6 +138,50 @@ func UpdateFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(foodstock)
 }
 
+// UpdateFoodMinQuantityHandler sets the owner-defined low-stock alert threshold of one food type
+// PUT /api/foods/min-quantity  body: {"food_type": "เม็ดเล็ก", "min_quantity": 50}
+func UpdateFoodMinQuantityHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req models.UpdateFoodMinQuantityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if !models.IsValidFoodType(req.FoodType) {
+		http.Error(w, "ต้องระบุ food_type เป็น 'เม็ดเล็ก' หรือ 'เม็ดใหญ่'", http.StatusBadRequest)
+		return
+	}
+	if req.MinQuantity < 0 {
+		http.Error(w, "min_quantity ต้องไม่ติดลบ", http.StatusBadRequest)
+		return
+	}
+
+	foodstock, err := database.SetFoodMinQuantity(userID, req.FoodType, req.MinQuantity)
+	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			http.Error(w, "ยังไม่เคยนำเข้าอาหารประเภทนี้ กรุณานำเข้าสต็อกก่อน", http.StatusNotFound)
+			return
+		}
+		log.Printf("[%s] %s - %d (Failed to set min quantity: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
+		http.Error(w, "Failed to update min quantity", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	log.Printf("[%s] %s - %d ✓ Set min quantity of %s to %.2f", r.Method, r.RequestURI, http.StatusOK, req.FoodType, req.MinQuantity)
+	json.NewEncoder(w).Encode(foodstock)
+}
+
 // DeleteFoodstockHandler deletes a foodstock
 // DELETE /api/foodstocks?id=1
 func DeleteFoodstockHandler(w http.ResponseWriter, r *http.Request) {
