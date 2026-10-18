@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS foodstock (
     food_type VARCHAR(20) NOT NULL,
     quantity_current DECIMAL(10,2) CHECK (quantity_current >= 0),
     date_up DATE NOT NULL,
+    min_quantity DECIMAL(10,2) NOT NULL DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES `User`(id_User) ON DELETE CASCADE,
     UNIQUE uq_foodstock_type_user (user_id, food_type)
 );

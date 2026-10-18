@@ -8,6 +8,9 @@ type CreateImportFoodRequest struct {
 	FoodType     string    `json:"food_type" binding:"required"`
 	ImportVolume int       `json:"import_volume" binding:"required,min=0"`
 	ExpiryDate   time.Time `json:"expiry_date" binding:"required"`
+	// MinQuantity (optional) sets the owner's low-stock alert threshold (kg) for FoodType
+	// at the same time; omitted/null leaves the existing threshold untouched.
+	MinQuantity *float64 `json:"min_quantity,omitempty"`
 }
 
 // ImportFoodResponse represents the response payload for an import food lot

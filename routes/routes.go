@@ -74,6 +74,7 @@ func SetupRoutes(db *gorm.DB) {
 	rg.GET("/api/foods", auth.RequireAuth(handleFoodsGet))
 	rg.PUT("/api/foods", auth.RequireAuth(handlers.UpdateFoodstockHandler))
 	rg.DELETE("/api/foods", auth.RequireAuth(handlers.DeleteFoodstockHandler))
+	rg.PUT("/api/foods/min-quantity", auth.RequireAuth(handlers.UpdateFoodMinQuantityHandler))
 	rg.POST("/api/foodstocks/force-deduct", auth.RequireAuth(handlers.ForceDeductStockHandler))
 	// ปลุกจากภายนอก (เช่น cron-job.org) แทน JWT - ดู auth.RequireScheduledTaskKey
 	rg.POST("/api/system/food-deduction/run", auth.RequireScheduledTaskKey(handlers.RunScheduledFoodDeductionHandler))
