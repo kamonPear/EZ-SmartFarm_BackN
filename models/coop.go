@@ -42,6 +42,10 @@ type Coop struct {
 	// ออกไปแล้วซ้ำแม้อุปกรณ์นั้นจะถูกลบ (กันบอร์ดที่ยังส่งเลขเก่าเข้าผิดอุปกรณ์) ไม่ส่งออกทาง JSON
 	NextDeviceNo int `gorm:"column:next_device_no;type:int;not null;default:1" json:"-"`
 
+	// ลำดับการแสดงคอกในหน้าหลัก (น้อย = อยู่ก่อน) ผู้ใช้ลากการ์ดคอกจัดเรียงเอง
+	// ตั้งค่าผ่าน PUT /api/coops/order เท่านั้น คอกใหม่ได้ลำดับต่อท้ายเสมอ (ดู CreateCoop)
+	SortOrder int `gorm:"column:sort_order;type:int;not null;default:0" json:"sort_order"`
+
 	// Relations (แก้โดยการลบ references:CoopID ออก)
 	Devices        []Device         `gorm:"foreignKey:CoopID" json:"devices,omitempty"`
 	Eggs           []Egg            `gorm:"foreignKey:CoopID" json:"eggs,omitempty"`

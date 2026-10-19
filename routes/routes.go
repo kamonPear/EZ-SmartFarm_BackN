@@ -76,6 +76,7 @@ func SetupRoutes(db *gorm.DB) {
 
 	rg.POST("/api/coops/layout", auth.RequireAuth(handlers.SaveCoopLayoutHandler))
 	rg.PUT("/api/coops/positions", auth.RequireAuth(handlers.UpdateCoopPositionsHandler))
+	rg.PUT("/api/coops/order", auth.RequireAuth(handlers.UpdateCoopOrderHandler)) // ลากจัดลำดับคอกในหน้าหลัก
 
 	// Farm layout (chosen outline shape coops are arranged within)
 	rg.GET("/api/farm-layout", auth.RequireAuth(handlers.GetFarmLayoutHandler))

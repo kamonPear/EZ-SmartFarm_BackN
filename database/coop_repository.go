@@ -48,6 +48,11 @@ func CreateCoop(req *models.CreateCoopRequest, userID int) (*models.Coop, error)
 		Note:             req.Note,
 	}
 
+	// คอกใหม่ต่อท้ายลำดับที่ผู้ใช้จัดไว้ (ไม่แทรกขึ้นไปบนสุด)
+	var maxOrder int
+	DB.Model(&models.Coop{}).Where("user_id = ?", userID).Select("COALESCE(MAX(sort_order), 0)").Scan(&maxOrder)
+	coop.SortOrder = maxOrder + 1
+
 	if err := DB.Create(coop).Error; err != nil {
 		log.Printf("Error creating coop: %v", err)
 		return nil, err
@@ -115,6 +120,7 @@ func GetAllCoops(userID int) ([]models.Coop, error) {
 		Preload("Health").
 		Preload("VaccineHistory").
 		Where("user_id = ?", userID).
+		Order("sort_order ASC, coop_id ASC"). // ตามลำดับที่ผู้ใช้ลากจัดไว้ (ยังไม่เคยจัด = ตามที่สร้าง)
 		Find(&coops).Error; err != nil {
 		log.Printf("Error fetching coops: %v", err)
 		return nil, err
@@ -210,6 +216,32 @@ func UpdateCoopPositions(entries []models.CoopPositionEntry, userID int) error {
 				Where("coop_id = ? AND user_id = ?", e.CoopID, userID).
 				Updates(map[string]interface{}{"pos_x": e.PosX, "pos_y": e.PosY}).Error; err != nil {
 				log.Printf("Error updating position for coop %d: %v", e.CoopID, err)
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// UpdateCoopOrder บันทึกลำดับการแสดงคอกที่ผู้ใช้ลากจัดในหน้าหลัก (sort_order = ตำแหน่งในรายการ เริ่ม 1)
+// เช็กก่อนว่าทุกคอกเป็นของผู้ใช้ ถ้ามีคอกไหนไม่ใช่ ยกเลิกทั้งชุด (ErrNotFound) ก่อนเขียนอะไรลงไป
+// ถูกเรียกจาก: handlers/coop.go -> UpdateCoopOrderHandler (PUT /api/coops/order)
+func UpdateCoopOrder(coopIDs []int, userID int) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		for _, id := range coopIDs {
+			ok, err := CoopBelongsToUser(id, userID)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return ErrNotFound
+			}
+		}
+		for i, id := range coopIDs {
+			if err := tx.Model(&models.Coop{}).
+				Where("coop_id = ? AND user_id = ?", id, userID).
+				Update("sort_order", i+1).Error; err != nil {
+				log.Printf("Error updating sort order for coop %d: %v", id, err)
 				return err
 			}
 		}
