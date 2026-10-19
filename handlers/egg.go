@@ -1,3 +1,13 @@
+// =====================================================================================
+// ไฟล์ handlers/egg.go - API บันทึกการเก็บไข่ (เพิ่ม / ดู / แก้ไข / ลบ)
+// =====================================================================================
+//
+// ข้อมูลอยู่ใน database/egg_repository.go
+// GET /api/eggs แยกที่ handleEggsGet ใน routes.go:
+//
+//	?id= -> GetEggHandler, ?coop_id= -> GetEggsByCoopHandler, ไม่มี -> GetAllEggsHandler
+//
+// id ส่งผ่าน query string (?id=) ทุกตัว
 package handlers
 
 import (
@@ -11,8 +21,13 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// CreateEggHandler creates a new egg record
-// POST /api/eggs
+// CreateEggHandler (POST /api/eggs) บันทึกการเก็บไข่ (หน้า "บันทึกการเก็บไข่")
+//   - ต้องมี coop_id, วันที่เก็บ, จำนวนไข่ (ไม่เป็น 0) ไม่งั้น 400
+//   - คอกไม่ใช่ของผู้ใช้ -> 404
+//   - ไก่อายุยังไม่ถึง 5 เดือน -> 422 พร้อมข้อความบอกวันที่เริ่มเก็บไข่ได้
+//     (422 = ข้อมูลรูปแบบถูก แต่ผิดเงื่อนไขทางธุรกิจ)
+//   - คอกนี้บันทึกไข่ของวันนั้นไปแล้ว -> 409
+//   - สำเร็จ -> 201
 func CreateEggHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -61,8 +76,7 @@ func CreateEggHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(egg)
 }
 
-// GetEggHandler retrieves a single egg record by ID
-// GET /api/eggs/{id}
+// GetEggHandler (GET /api/eggs?id=) ดึงบันทึกไข่ 1 รายการ (เฉพาะของผู้ใช้) ไม่เจอ -> 404
 func GetEggHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -98,8 +112,8 @@ func GetEggHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(egg)
 }
 
-// GetEggsByCoopHandler retrieves all egg records for a specific coop
-// GET /api/eggs/coop/{coop_id}
+// GetEggsByCoopHandler (GET /api/eggs?coop_id=) ดึงบันทึกไข่ทั้งหมดของคอกเดียว
+// คอกไม่ใช่ของผู้ใช้ -> 404, ไม่มีข้อมูลส่ง [] แทน null
 func GetEggsByCoopHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -142,8 +156,7 @@ func GetEggsByCoopHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(eggs)
 }
 
-// GetAllEggsHandler retrieves all egg records
-// GET /api/eggs
+// GetAllEggsHandler (GET /api/eggs) ดึงบันทึกไข่ของทุกคอก ใช้ทำกราฟ/สรุปจำนวนไข่
 func GetAllEggsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -169,8 +182,8 @@ func GetAllEggsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(eggs)
 }
 
-// UpdateEggHandler updates an existing egg record
-// PUT /api/eggs/{id}
+// UpdateEggHandler (PUT /api/eggs?id=) แก้ไขบันทึกไข่
+// ไม่เจอ -> 404, เปลี่ยนเป็นวัน/คอกที่ไก่ยังอายุไม่ถึง -> 422
 func UpdateEggHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -220,8 +233,7 @@ func UpdateEggHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(egg)
 }
 
-// DeleteEggHandler deletes an egg record
-// DELETE /api/eggs/{id}
+// DeleteEggHandler (DELETE /api/eggs?id=) ลบบันทึกไข่ 1 รายการ ไม่เจอ -> 404
 func DeleteEggHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

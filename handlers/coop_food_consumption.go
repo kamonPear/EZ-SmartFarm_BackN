@@ -1,3 +1,6 @@
+// =====================================================================================
+// ไฟล์ handlers/coop_food_consumption.go - API ประมาณอาหารที่แต่ละคอกกินต่อวัน
+// =====================================================================================
 package handlers
 
 import (
@@ -11,14 +14,19 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// GetCoopFoodConsumptionHandler estimates how many kg of food each coop eats per day.
-// Each coop's food type is decided by the age of its chickens (the owner's food age rules),
-// and the estimate is a direct headcount calculation (coop.Amount x
-// configured grams per bird) - the same formula ComputeDailyFoodConsumption
-// uses for the real automatic deduction, so what's shown here always matches what actually
-// gets deducted (no per-coop feed sensor exists, so this is still an estimate, just no
-// longer a proportional split of an artificial fixed pool).
-// GET /api/foods/coop-consumption
+// GetCoopFoodConsumptionHandler (GET /api/foods/coop-consumption)
+// คำนวณว่าแต่ละคอกกินอาหารประเภทไหน วันละกี่ กก. ใช้แสดงในหน้าคลังอาหาร
+//
+// วิธีคำนวณของแต่ละคอก:
+//  1. อายุไก่ (สัปดาห์) = (วันนี้ - วันเกิดไก่) / 7
+//  2. หาแถวในตารางให้อาหาร (food_age_rule) ที่ช่วงอายุครอบอายุนี้ -> ได้ประเภทอาหารและกรัม/ตัว/วัน
+//  3. กก./วัน = จำนวนไก่ x กรัมต่อตัว / 1000 (ทำใน rules.CoopFeed)
+//
+// คอกที่ไม่มีวันเกิดไก่ คำนวณอายุไม่ได้ จึงคืนค่า 0
+//
+// ทำไมใช้สูตรเดียวกับการตัดสต็อกจริง (ComputeDailyFoodConsumption):
+// ตัวเลขที่ผู้ใช้เห็นในหน้าจอจะตรงกับที่ระบบตัดจริงทุกเช้า
+// (ไม่มีเซนเซอร์วัดอาหารรายคอก ตัวเลขนี้จึงเป็นค่าประมาณจากจำนวนไก่)
 func GetCoopFoodConsumptionHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)

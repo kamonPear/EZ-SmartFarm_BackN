@@ -1,8 +1,29 @@
+// =====================================================================================
+// ไฟล์ models/coop.go - โครงสร้างตาราง coop (คอกไก่)
+// =====================================================================================
+//
+// โฟลเดอร์ models/ เก็บ "รูปร่างข้อมูล" (struct) ของทั้งระบบ แบ่งเป็น 2 แบบ:
+//  - model ของตาราง (เช่น Coop) : 1 struct = 1 ตาราง, 1 field = 1 คอลัมน์
+//  - request (ไฟล์ *_request.go)  : รูปแบบ JSON ที่แอป/เว็บส่งเข้ามา
+//
+// อ่าน tag ใน struct ยังไง:
+//  - gorm:"column:coop_id;type:int" = บอก GORM ว่า field นี้คือคอลัมน์ไหน ชนิดอะไร (ใช้ตอน AutoMigrate/query)
+//  - json:"coop_id"                = ชื่อ field ตอนแปลงเป็น JSON ส่งให้แอป/เว็บ
+//  - json:"-"                      = ไม่ส่งออกทาง JSON เลย
+//  - omitempty                      = ถ้าว่างไม่ต้องใส่ใน JSON
 package models
 
 import "time"
 
-// Coop represents the chicken coop/farm information
+// Coop คอกไก่ 1 คอก (ตาราง coop)
+//  - UserID           : เจ้าของคอก ใช้แยกข้อมูลของแต่ละผู้ใช้
+//  - NameCoop         : ชื่อคอก ห้ามซ้ำภายในผู้ใช้เดียวกัน (unique key uq_coop_user_name ใน migration)
+//  - DateAdoptAnimals : วันที่รับไก่เข้าเลี้ยง
+//  - Amount           : จำนวนไก่ ใช้คำนวณอาหารต่อวัน
+//  - Birthday         : วันเกิดไก่ ใช้คำนวณอายุ -> วัคซีน, ประเภทอาหาร, เริ่มเก็บไข่ได้เมื่อไร
+//  - PosX / PosY      : ตำแหน่งบนผังฟาร์ม (เป็น pointer เพราะ nil = ยังไม่ได้วาง)
+//  - NextDeviceNo     : เลขอุปกรณ์ตัวถัดไปของคอก (ไม่ส่งออก JSON)
+//  - Devices/Eggs/Health/VaccineHistory : ข้อมูลลูก โหลดด้วย Preload (ไม่ใช่คอลัมน์)
 type Coop struct {
 	CoopID           int       `gorm:"primaryKey;autoIncrement;column:coop_id;type:int" json:"coop_id"`
 	UserID           int       `gorm:"column:user_id;type:int;size:32;index" json:"user_id"`
@@ -28,7 +49,8 @@ type Coop struct {
 	VaccineHistory []VaccineHistory `gorm:"foreignKey:CoopID" json:"vaccine_history,omitempty"`
 }
 
-// TableName specifies the table name for Coop model
+// TableName บอก GORM ว่า struct นี้ใช้ตารางชื่อ "coop"
+// (ถ้าไม่บอก GORM จะเดาชื่อเป็นพหูพจน์ "coops" ซึ่งไม่ตรงกับฐานข้อมูลจริง)
 func (Coop) TableName() string {
 	return "coop"
 }

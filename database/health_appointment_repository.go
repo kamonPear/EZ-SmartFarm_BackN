@@ -1,3 +1,13 @@
+// =====================================================================================
+// ไฟล์ database/health_appointment_repository.go - "นัดตรวจสุขภาพเอง" (นัดล่วงหน้าแบบกำหนดวันเอง)
+// =====================================================================================
+//
+// ระบบนัดตรวจสุขภาพมี 2 โหมด (หน้า "นัดตรวจสุขภาพ"):
+//   - นัดให้อัตโนมัติ : คำนวณจากวันให้วัคซีน (ตรวจก่อนวันให้วัคซีน 1 วัน) อยู่ใน handlers/vaccine.go
+//   - นัดตรวจสุขภาพเอง: ผู้ใช้เลือกวันเอง เก็บในตาราง health_appointments <- ไฟล์นี้
+//
+// เดิมโหมดนัดเองเก็บใน localStorage ของเว็บ ย้ายมาเก็บใน DB เพื่อให้แอปเห็นด้วย
+// ถูกเรียกจาก: handlers/health_appointment.go
 package database
 
 import (
@@ -10,15 +20,23 @@ import (
 	"gorm.io/gorm"
 )
 
+// normalizeAppointmentDate ตัดเวลาออก เหลือแค่วันที่ (เที่ยงคืน 00:00 ตามเวลาท้องถิ่น)
+// ทำไมต้องทำ: วันที่ที่ส่งมาอาจมีเวลาติดมาด้วย (เช่น 2026-10-12 14:30) ถ้าไม่ตัด
+// นัดวันเดียวกันจะถูกมองว่าเป็นคนละนัด และเช็กนัดซ้ำไม่เจอ
 func normalizeAppointmentDate(t time.Time) time.Time {
 	local := t.In(time.Local)
 	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.Local)
 }
 
-// CreateHealthAppointment books a manual health-check appointment for a coop, only
-// if req.CoopID belongs to userID. Returns the existing row (not an error) if an
-// appointment for the same coop+date already exists - matches the idempotent
-// de-dupe behavior the frontend's old localStorage version had.
+// CreateHealthAppointment สร้างนัดตรวจสุขภาพให้คอก (ปุ่ม "+ เพิ่มนัดตรวจใหม่")
+//
+// ขั้นตอน:
+//  1. CoopBelongsToUser ตรวจว่าคอกนี้เป็นของผู้ใช้จริง ถ้าไม่ใช่ คืน ErrNotFound
+//     (กันการสร้างนัดให้คอกของฟาร์มอื่น โดยตอบว่า "ไม่พบ" ไม่บอกว่ามีคอกนี้อยู่)
+//  2. ตัดเวลาออกจากวันที่นัด
+//  3. ถ้าคอกนี้มีนัดวันนี้อยู่แล้ว -> คืนนัดเดิม (ไม่ error ไม่สร้างซ้ำ) เรียกว่า idempotent
+//     กดซ้ำกี่ครั้งผลก็เหมือนเดิม
+//  4. ยังไม่มี -> บันทึกนัดใหม่
 func CreateHealthAppointment(req *models.CreateHealthAppointmentRequest, userID int) (*models.HealthAppointment, error) {
 	owned, err := CoopBelongsToUser(req.CoopID, userID)
 	if err != nil {
@@ -51,10 +69,11 @@ func CreateHealthAppointment(req *models.CreateHealthAppointmentRequest, userID 
 	return appt, nil
 }
 
-// GetHealthAppointments returns every today-or-later manual appointment belonging to
-// userID's coops (optionally filtered to one coop), soonest first. Past appointments
-// are left in the table (harmless history) but excluded here - once the date
-// arrives it becomes a normal health check, not an upcoming "appointment" anymore.
+// GetHealthAppointments ดึงนัดตรวจ "ตั้งแต่วันนี้เป็นต้นไป" ของทุกคอกที่ผู้ใช้เป็นเจ้าของ เรียงจากใกล้สุด
+// ถ้าส่ง coopID มา จะกรองเฉพาะคอกนั้น (ใช้ pointer *int เพื่อแยก "ไม่ส่งมา" (nil) ออกจาก "ส่ง 0")
+//
+// coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?) = subquery กรองเฉพาะคอกของผู้ใช้
+// นัดที่ผ่านไปแล้วยังเก็บไว้ในตาราง แต่ไม่ดึงมาแสดง เพราะพอถึงวันก็กลายเป็นการตรวจสุขภาพปกติแล้ว
 func GetHealthAppointments(userID int, coopID *int) ([]models.HealthAppointment, error) {
 	var appts []models.HealthAppointment
 	today := normalizeAppointmentDate(time.Now())
@@ -71,7 +90,8 @@ func GetHealthAppointments(userID int, coopID *int) ([]models.HealthAppointment,
 	return appts, nil
 }
 
-// DeleteHealthAppointment removes a manual appointment, only if its coop belongs to userID.
+// DeleteHealthAppointment ลบนัดตรวจ โดยต้องเป็นนัดของคอกที่ผู้ใช้เป็นเจ้าของเท่านั้น
+// หาไม่เจอ (หรือเป็นของคนอื่น) -> ErrNotFound ซึ่ง handler จะตอบ 404
 func DeleteHealthAppointment(id int, userID int) error {
 	var appt models.HealthAppointment
 	err := DB.Where("appointment_id = ? AND coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", id, userID).

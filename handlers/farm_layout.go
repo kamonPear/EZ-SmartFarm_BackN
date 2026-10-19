@@ -1,3 +1,9 @@
+// =====================================================================================
+// ไฟล์ handlers/farm_layout.go - API ผังฟาร์ม (รูปทรงขอบฟาร์ม และตำแหน่งคอกบนผัง)
+// =====================================================================================
+//
+// หน้าเว็บ "จัดวางผังฟาร์ม": ผู้ใช้เลือกรูปทรงขอบฟาร์ม (วงกลม/สามเหลี่ยม/สี่เหลี่ยม)
+// แล้วลากคอกไปวางบนผัง ตำแหน่งเก็บเป็นเปอร์เซ็นต์ (pos_x, pos_y) จึงแสดงถูกทุกขนาดจอ
 package handlers
 
 import (
@@ -11,8 +17,8 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// GetFarmLayoutHandler retrieves the caller's chosen outline shape
-// GET /api/farm-layout
+// GetFarmLayoutHandler (GET /api/farm-layout) ส่งรูปทรงขอบฟาร์มที่ผู้ใช้เลือกไว้
+// ข้อมูลจาก database.GetFarmLayout (ถ้ายังไม่เคยเลือก จะได้ค่าเริ่มต้น)
 func GetFarmLayoutHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -37,8 +43,9 @@ func GetFarmLayoutHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(layout)
 }
 
-// UpdateFarmLayoutHandler sets the caller's chosen outline shape
-// PUT /api/farm-layout  body: {"shape": "circle"}
+// UpdateFarmLayoutHandler (PUT /api/farm-layout) บันทึกรูปทรงขอบฟาร์ม body: {"shape": "circle"}
+// ตรวจก่อนว่าเป็น circle / triangle / square เท่านั้น (models.IsValidFarmShape) ไม่ใช่ -> 400
+// ทำไมต้องตรวจ: หน้าเว็บวาดได้แค่ 3 รูปนี้ ถ้าเก็บค่าอื่นลงไป ผังจะแสดงไม่ได้
 func UpdateFarmLayoutHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -77,8 +84,10 @@ func UpdateFarmLayoutHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(layout)
 }
 
-// UpdateCoopPositionsHandler batch-saves every coop's position on the farm layout canvas
-// PUT /api/coops/positions  body: {"positions": [{"coop_id":1,"pos_x":42.5,"pos_y":10.2}, ...]}
+// UpdateCoopPositionsHandler (PUT /api/coops/positions) บันทึกตำแหน่งทุกคอกบนผังในครั้งเดียว
+// body: {"positions": [{"coop_id":1, "pos_x":42.5, "pos_y":10.2}, ...]}
+// ส่งต่อให้ database.UpdateCoopPositions (เช็กว่าทุกคอกเป็นของผู้ใช้ ใน Transaction)
+// ถ้ามีคอกไหนไม่ใช่ของผู้ใช้ -> 404 และไม่บันทึกเลยสักคอก
 func UpdateCoopPositionsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)

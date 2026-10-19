@@ -1,15 +1,18 @@
+// =====================================================================================
+// ไฟล์ models/food_age_rule.go - ตารางให้อาหารตามอายุไก่ และ "สูตรคำนวณอาหาร" ของทั้งระบบ
+// =====================================================================================
+//
+// ทุกตัวเลขเรื่องอาหาร (ประมาณการรายคอก, ตัดสต็อกอัตโนมัติ, ตัดสต็อกเอง) มาจาก FoodRules.CoopFeed ตัวเดียว
+// ตัวเลขจึงตรงกันทุกหน้าจอ
 package models
 
 import "sort"
 
-// FoodAgeRule is one row of the feeding table the farm owner fills in for themselves:
-// "chickens aged [MinWeeks, MaxWeeks) are fed FoodType, and one bird eats GramsPerBird
-// grams per day". An owner can add as many rows as they like (several age brackets per
-// food type, each with its own grams). MaxWeeks 0 means "no upper limit".
-//
-// Nothing is hardcoded: a coop's food type and daily consumption are looked up from these
-// rows by its age (counted from its birthday). No matching row = no food type, no
-// consumption, nothing deducted for that coop.
+// FoodAgeRule 1 แถวของตารางให้อาหารที่เจ้าของฟาร์มกรอกเอง:
+// "ไก่อายุ [MinWeeks, MaxWeeks) สัปดาห์ กินอาหาร FoodType ตัวละ GramsPerBird กรัมต่อวัน"
+//  - MaxWeeks = 0 หมายถึงไม่จำกัดอายุสูงสุด
+//  - เพิ่มได้หลายแถว (หลายช่วงอายุต่อประเภทอาหาร)
+// ไม่มีค่าตายตัวในโค้ด: คอกที่อายุไม่ตรงแถวไหนเลย = ไม่มีประเภทอาหาร ไม่ถูกตัดสต็อก
 type FoodAgeRule struct {
 	ID           int     `gorm:"primaryKey;autoIncrement;column:id;type:int" json:"id"`
 	UserID       int     `gorm:"column:user_id;type:int;size:32;index:idx_food_age_rule_user" json:"user_id"`
@@ -19,12 +22,12 @@ type FoodAgeRule struct {
 	GramsPerBird float64 `gorm:"column:grams_per_bird;type:decimal(10,3);not null" json:"grams_per_bird"`
 }
 
-// TableName specifies the table name for FoodAgeRule model
+// TableName บอก GORM ว่าใช้ตาราง "food_age_rule"
 func (FoodAgeRule) TableName() string {
 	return "food_age_rule"
 }
 
-// FoodAgeRuleInput is one row of the save request (the owner's table is replaced whole).
+// FoodAgeRuleInput 1 แถวใน body ตอนบันทึกตาราง (ไม่มี id/user_id เพราะบันทึกแทนที่ทั้งตาราง)
 type FoodAgeRuleInput struct {
 	FoodType     string  `json:"food_type"`
 	MinWeeks     int     `json:"min_weeks"`
@@ -32,15 +35,18 @@ type FoodAgeRuleInput struct {
 	GramsPerBird float64 `json:"grams_per_bird"`
 }
 
-// UpdateFoodAgeRulesRequest is the request payload for saving the whole feeding table.
+// UpdateFoodAgeRulesRequest body ของ PUT /api/food-age-rules = ทั้งตาราง {"rules": [...]}
 type UpdateFoodAgeRulesRequest struct {
 	Rules []FoodAgeRuleInput `json:"rules"`
 }
 
-// FoodRules is a user's whole feeding table, as loaded from the database.
+// FoodRules ตารางให้อาหารทั้งหมดของผู้ใช้ 1 คน (slice ของ FoodAgeRule)
+// ตั้งเป็น type ของตัวเอง เพื่อผูก method Match และ CoopFeed ไว้ใช้ได้เลย
 type FoodRules []FoodAgeRule
 
-// Match returns the rule whose age range contains ageWeeks, or nil if none does.
+// Match หาแถวที่ช่วงอายุครอบ ageWeeks (MinWeeks <= อายุ < MaxWeeks หรือ MaxWeeks = 0)
+// ไม่เจอคืน nil คืน pointer ไปที่แถวใน slice (ไม่คัดลอก)
+// ถูกเรียกจาก: CoopFeed
 func (rs FoodRules) Match(ageWeeks int) *FoodAgeRule {
 	for i := range rs {
 		r := &rs[i]
@@ -51,10 +57,13 @@ func (rs FoodRules) Match(ageWeeks int) *FoodAgeRule {
 	return nil
 }
 
-// CoopFeed is the single calculation behind every food number: from a coop's age in weeks
-// and its headcount it finds the owner's matching rule and returns the food type, the kg
-// the whole coop eats per day (headcount x grams per bird / 1000), and the rule itself
-// (so callers can explain why). Returns ("", 0, nil) when no rule matches.
+// CoopFeed "สูตรเดียว" ของทุกตัวเลขอาหารในระบบ
+// รับอายุคอก (สัปดาห์) และจำนวนไก่ แล้วคืน:
+//  - foodType : ประเภทอาหารที่คอกนี้ควรกิน
+//  - kgPerDay : กก./วัน ทั้งคอก = จำนวนไก่ x กรัมต่อตัว / 1000
+//  - rule     : แถวที่ใช้ (ให้ผู้เรียกอธิบายได้ว่าทำไมได้ค่านี้)
+// ไม่มีแถวตรง -> ("", 0, nil), จำนวนไก่ <= 0 -> ได้ประเภทแต่ kg = 0
+// ถูกเรียกจาก: handlers/foodstock.go (ComputeDailyFoodConsumptionByCoop) และ handlers/coop_food_consumption.go
 func (rs FoodRules) CoopFeed(ageWeeks, headcount int) (foodType string, kgPerDay float64, rule *FoodAgeRule) {
 	rule = rs.Match(ageWeeks)
 	if rule == nil {
@@ -66,9 +75,11 @@ func (rs FoodRules) CoopFeed(ageWeeks, headcount int) (foodType string, kgPerDay
 	return rule.FoodType, float64(headcount) * rule.GramsPerBird / 1000, rule
 }
 
-// Validate checks every row (known food type, ages >= 0, max 0 or > min, grams > 0) and
-// that no two rows' age ranges overlap - an age must map to exactly one rule.
-// Returns "" when valid.
+// Validate ตรวจตารางให้อาหารก่อนบันทึก คืน "" ถ้าผ่าน หรือข้อความภาษาไทยบอกว่าแถวไหนผิด
+// ตรวจทีละแถว: ประเภทอาหารถูกต้อง, อายุไม่ติดลบ, อายุสิ้นสุด > อายุเริ่ม (หรือ 0), กรัม > 0
+// แล้วเรียงตามอายุเริ่ม เช็กว่าช่วงอายุไม่ซ้อนกัน
+// ทำไมห้ามซ้อน: อายุหนึ่งต้องได้แถวเดียว ไม่งั้นไม่รู้จะใช้อาหารแบบไหน
+// ถูกเรียกจาก: handlers/food_age_rule.go
 func (r UpdateFoodAgeRulesRequest) Validate() string {
 	for i, in := range r.Rules {
 		n := i + 1
@@ -97,6 +108,8 @@ func (r UpdateFoodAgeRulesRequest) Validate() string {
 	return ""
 }
 
+// itoa แปลงเลขจำนวนเต็มบวกเป็นข้อความ (เช่น 3 -> "3") ใช้ทำข้อความ "แถวที่ N" ใน Validate
+// (ทำงานเหมือน strconv.Itoa สำหรับเลขบวก)
 func itoa(n int) string {
 	if n == 0 {
 		return "0"

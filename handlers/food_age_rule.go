@@ -1,3 +1,10 @@
+// =====================================================================================
+// ไฟล์ handlers/food_age_rule.go - API ตารางปริมาณอาหารตามอายุไก่
+// =====================================================================================
+//
+// หน้าเว็บคลังอาหารมีหน้าต่างให้ผู้ใช้ตั้งว่า ไก่อายุช่วงไหน กินอาหารอะไร ตัวละกี่กรัมต่อวัน
+// ข้อมูลอยู่ใน database/food_age_rule_repository.go
+// ตารางนี้ถูกใช้คำนวณการตัดสต็อกอาหารประจำวัน (handlers/foodstock.go)
 package handlers
 
 import (
@@ -10,8 +17,8 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// GetFoodAgeRulesHandler returns the caller's feeding table (empty list if none yet)
-// GET /api/food-age-rules
+// GetFoodAgeRulesHandler (GET /api/food-age-rules) ส่งตารางให้อาหารของผู้ใช้
+// ถ้ายังไม่เคยตั้ง จะได้ list ว่าง [] (หน้าเว็บจะให้ผู้ใช้เริ่มกรอก)
 func GetFoodAgeRulesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -31,9 +38,13 @@ func GetFoodAgeRulesHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rules)
 }
 
-// UpdateFoodAgeRulesHandler replaces the caller's whole feeding table
-// PUT /api/food-age-rules
+// UpdateFoodAgeRulesHandler (PUT /api/food-age-rules) บันทึกตารางให้อาหารใหม่ทั้งตาราง
 // body: {"rules":[{"food_type":"เม็ดเล็ก","min_weeks":0,"max_weeks":14,"grams_per_bird":60}, ...]}
+//  1. ตรวจข้อมูลด้วย req.Validate() (models/food_age_rule.go)
+//     เช่น ประเภทอาหารต้องถูกต้อง, ช่วงอายุไม่ติดลบ/ไม่ทับกัน, กรัมต้องมากกว่า 0
+//     ไม่ผ่าน -> 400 พร้อมข้อความบอกว่าผิดตรงไหน
+//  2. แทนที่ทั้งตารางด้วย database.ReplaceFoodAgeRules (ใน Transaction)
+//  3. ส่งตารางใหม่กลับไปให้หน้าเว็บแสดง
 func UpdateFoodAgeRulesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

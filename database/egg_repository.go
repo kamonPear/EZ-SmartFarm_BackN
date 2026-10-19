@@ -1,3 +1,14 @@
+// =====================================================================================
+// ไฟล์ database/egg_repository.go - บันทึกการเก็บไข่ (ตาราง egg)
+// =====================================================================================
+//
+// บันทึก 1 ครั้ง = 1 แถว: คอก, วันที่เก็บไข่, จำนวนไข่ (ฟอง), หมายเหตุ
+// กฎสำคัญ 2 ข้อ:
+//  1. คอกเดียวกันบันทึกซ้ำวันเดียวกันไม่ได้ (unique key: coop_id + date_collect_egg)
+//  2. ไก่ต้องอายุครบ MinEggAgeMonths (5 เดือน) นับจากวันเกิดไก่ จึงบันทึกไข่ได้
+//     เพราะไก่ไข่เริ่มออกไข่ราว 5 เดือน กันการกรอกวันที่ผิด
+//
+// ถูกเรียกจาก: handlers/egg.go
 package database
 
 import (
@@ -12,9 +23,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// IsDuplicateEggDate reports whether err is a unique-constraint violation on
-// (coop_id, date_collect_egg) — i.e. an egg record already exists for that
-// coop on that date (schema.sql: UNIQUE (coop_id, date_collect_egg))
+// IsDuplicateEggDate ตรวจว่า error จาก DB เกิดจาก "บันทึกไข่ซ้ำวันเดิมของคอกเดิม" หรือไม่
+// (ข้อความ error มีทั้งคำว่า duplicate และ coop_id ซึ่งมาจาก unique key ของตาราง egg)
+// handler จะได้ตอบผู้ใช้เป็นข้อความที่เข้าใจได้ว่า "วันนี้บันทึกไข่ของคอกนี้ไปแล้ว"
+// ถูกเรียกจาก: handlers/egg.go
 func IsDuplicateEggDate(err error) bool {
 	if err == nil {
 		return false
@@ -23,20 +35,25 @@ func IsDuplicateEggDate(err error) bool {
 	return strings.Contains(msg, "duplicate") && strings.Contains(msg, "coop_id")
 }
 
-// MinEggAgeMonths คืออายุไก่ขั้นต่ำ (เดือน นับจากวันเกิดไก่ของคอก) ก่อนจะบันทึกการเก็บไข่ได้
+// MinEggAgeMonths อายุไก่ขั้นต่ำ (เดือน นับจากวันเกิดไก่ของคอก) ก่อนจะบันทึกการเก็บไข่ได้
+// ใช้ 5 เดือน เพราะเป็นช่วงที่ไก่ไข่เริ่มให้ไข่ ตั้งเป็นค่าคงที่ไว้ที่เดียวเพื่อแก้ง่าย
 const MinEggAgeMonths = 5
 
-// ChickensTooYoungError คือบันทึกไข่ของวันที่ไก่อายุยังไม่ถึง MinEggAgeMonths -
+// ChickensTooYoungError error แบบพิเศษ: บันทึกไข่ของวันที่ไก่ยังอายุไม่ถึง MinEggAgeMonths
 // EligibleDate คือวันแรก (YYYY-MM-DD) ที่คอกนี้บันทึกไข่ได้
+// ทำไมต้องสร้าง type เอง: handler จะได้ดึงวันที่นี้ไปบอกผู้ใช้ได้ว่า "เก็บไข่ได้ตั้งแต่วันที่ ..."
 type ChickensTooYoungError struct {
 	EligibleDate string
 }
 
+// Error ทำให้ ChickensTooYoungError เป็น error ของ Go ได้ คืนข้อความภาษาไทยพร้อมวันที่เริ่มเก็บไข่ได้
 func (e *ChickensTooYoungError) Error() string {
 	return fmt.Sprintf("ไก่ยังอายุไม่ถึง %d เดือน เก็บไข่ได้ตั้งแต่วันที่ %s", MinEggAgeMonths, e.EligibleDate)
 }
 
-// IsChickensTooYoung reports whether err is a *ChickensTooYoungError
+// IsChickensTooYoung ตรวจว่า err เป็น ChickensTooYoungError หรือไม่ ถ้าใช่ คืนตัว error มาด้วย
+// ใช้ errors.As ซึ่งแกะ error ที่ถูกห่อไว้ได้ (ปลอดภัยกว่าการเทียบ type ตรง ๆ)
+// ถูกเรียกจาก: handlers/egg.go (เพื่อตอบ 422 พร้อมวันที่ EligibleDate)
 func IsChickensTooYoung(err error) (*ChickensTooYoungError, bool) {
 	var tooYoung *ChickensTooYoungError
 	if errors.As(err, &tooYoung) {
@@ -45,8 +62,12 @@ func IsChickensTooYoung(err error) (*ChickensTooYoungError, bool) {
 	return nil, false
 }
 
-// checkChickensOldEnough ปฏิเสธการบันทึกไข่ของวันที่ก่อน (วันเกิดไก่ + MinEggAgeMonths เดือน)
-// คอกที่ไม่มีวันเกิดไก่ผ่านไปได้ (เช็กอายุไม่ได้)
+// checkChickensOldEnough ตรวจว่าวันที่เก็บไข่ ไม่อยู่ก่อน (วันเกิดไก่ + MinEggAgeMonths เดือน)
+//  1. ดึงเฉพาะ coop_id และ birthday ของคอก (Select เท่าที่ใช้ ประหยัดกว่า)
+//  2. ถ้าคอกไม่มีวันเกิดไก่ -> ผ่าน เพราะคำนวณอายุไม่ได้
+//  3. เทียบวันแบบข้อความ YYYY-MM-DD (models.DateKey) เพื่อไม่ให้เวลา/เขตเวลามีผล
+//
+// ถูกเรียกจาก: CreateEgg และ UpdateEgg ในไฟล์นี้
 func checkChickensOldEnough(coopID int, collectDate time.Time) error {
 	var coop models.Coop
 	if err := DB.Select("coop_id", "birthday").First(&coop, coopID).Error; err != nil {
@@ -62,7 +83,13 @@ func checkChickensOldEnough(coopID int, collectDate time.Time) error {
 	return nil
 }
 
-// CreateEgg creates a new egg record in the database, only if req.CoopID belongs to userID
+// CreateEgg บันทึกการเก็บไข่ใหม่ (หน้า "บันทึกการเก็บไข่")
+//  1. เช็กว่าคอกเป็นของผู้ใช้ (CoopBelongsToUser) ไม่ใช่ -> ErrNotFound
+//  2. เช็กอายุไก่ (checkChickensOldEnough)
+//  3. บันทึกลง DB (ถ้าซ้ำวันเดิม DB คืน error ซ้ำ ซึ่ง handler แยกด้วย IsDuplicateEggDate)
+//  4. โหลดแถวใหม่พร้อมข้อมูลคอก (Preload) เพื่อส่งกลับให้แอปแสดงชื่อคอกได้ทันที
+//
+// ถูกเรียกจาก: handlers/egg.go -> CreateEggHandler (POST /api/eggs)
 func CreateEgg(req *models.CreateEggRequest, userID int) (*models.Egg, error) {
 	owned, err := CoopBelongsToUser(req.CoopID, userID)
 	if err != nil {
@@ -97,7 +124,9 @@ func CreateEgg(req *models.CreateEggRequest, userID int) (*models.Egg, error) {
 	return egg, nil
 }
 
-// GetEggByID retrieves an egg record by ID, only if its coop belongs to userID
+// GetEggByID ดึงบันทึกไข่ 1 รายการตาม id พร้อมข้อมูลคอก
+// ใช้ subquery "coop_id IN (คอกของผู้ใช้)" เพื่อให้เห็นเฉพาะของตัวเอง ไม่เจอคืน ErrNotFound
+// ถูกใช้ใน UpdateEgg / DeleteEgg และ handlers/egg.go
 func GetEggByID(eggID int, userID int) (*models.Egg, error) {
 	var egg *models.Egg
 
@@ -114,7 +143,8 @@ func GetEggByID(eggID int, userID int) (*models.Egg, error) {
 	return egg, nil
 }
 
-// GetEggsByCoopID retrieves all egg records for a specific coop, only if it belongs to userID
+// GetEggsByCoopID ดึงบันทึกไข่ทั้งหมดของคอกเดียว เรียงจากวันล่าสุด (หลังเช็กว่าคอกเป็นของผู้ใช้)
+// ใช้แสดงประวัติการเก็บไข่รายคอก
 func GetEggsByCoopID(coopID int, userID int) ([]models.Egg, error) {
 	var eggs []models.Egg
 
@@ -137,7 +167,8 @@ func GetEggsByCoopID(coopID int, userID int) ([]models.Egg, error) {
 	return eggs, nil
 }
 
-// GetAllEggs retrieves every egg record belonging to any of userID's coops
+// GetAllEggs ดึงบันทึกไข่ของทุกคอกของผู้ใช้ เรียงจากวันล่าสุด
+// ใช้ทำกราฟ/สรุปจำนวนไข่ในหน้าหลักและหน้ารายงาน
 func GetAllEggs(userID int) ([]models.Egg, error) {
 	var eggs []models.Egg
 
@@ -152,7 +183,11 @@ func GetAllEggs(userID int) ([]models.Egg, error) {
 	return eggs, nil
 }
 
-// UpdateEgg updates an existing egg record, only if it (and any target coop) belongs to userID
+// UpdateEgg แก้ไขบันทึกไข่ (หน้าต่าง "แก้ไข บันทึกไข่")
+//  1. เช็กว่าบันทึกเป็นของผู้ใช้ (GetEggByID)
+//  2. ถ้าย้ายไปคอกอื่น คอกปลายทางต้องเป็นของผู้ใช้ด้วย
+//  3. ถ้าเปลี่ยนคอกหรือวันที่ ต้องเช็กอายุไก่ใหม่ ด้วยคู่ (คอก, วัน) หลังแก้
+//  4. อัปเดตเฉพาะช่องที่ส่งมา (map ชื่อคอลัมน์จริง) ถ้าไม่มีอะไรเปลี่ยนคืนค่าเดิม
 func UpdateEgg(eggID int, req *models.UpdateEggRequest, userID int) (*models.Egg, error) {
 	egg, err := GetEggByID(eggID, userID)
 	if err != nil {
@@ -214,7 +249,7 @@ func UpdateEgg(eggID int, req *models.UpdateEggRequest, userID int) (*models.Egg
 	return egg, nil
 }
 
-// DeleteEgg deletes an egg record from the database, only if its coop belongs to userID
+// DeleteEgg ลบบันทึกไข่ 1 รายการ (เช็กสิทธิ์ผ่าน GetEggByID ก่อน)
 func DeleteEgg(eggID int, userID int) error {
 	egg, err := GetEggByID(eggID, userID)
 	if err != nil {
@@ -230,7 +265,8 @@ func DeleteEgg(eggID int, userID int) error {
 	return nil
 }
 
-// DeleteEggsByCoopID deletes all egg records for a specific coop
+// DeleteEggsByCoopID ลบบันทึกไข่ทั้งหมดของคอก "โดยไม่เช็กเจ้าของ" ตอนนี้ไม่มีที่ไหนเรียกใช้
+// (การลบคอกใช้ Transaction ใน DeleteCoop แทน)
 func DeleteEggsByCoopID(coopID int) error {
 	if err := DB.Where("coop_id = ?", coopID).Delete(&models.Egg{}).Error; err != nil {
 		log.Printf("Error deleting egg records for coop %d: %v", coopID, err)

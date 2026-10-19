@@ -1,3 +1,23 @@
+// =====================================================================================
+// ไฟล์ handlers/foodstock.go - API คลังอาหาร และ "ระบบตัดสต็อกอาหารประจำวัน"
+// =====================================================================================
+//
+// หัวใจของไฟล์นี้คือการตัดสต็อกอัตโนมัติ:
+//
+//	อาหารที่ใช้ต่อวัน = ผลรวมของทุกคอก (จำนวนไก่ x กรัม/ตัว/วัน ตามช่วงอายุ ในตารางให้อาหาร)
+//	แยกคิดตามประเภทอาหาร (เม็ดเล็ก / เม็ดใหญ่)
+//
+// การตัดสต็อกเกิดได้ 4 ทาง (ทุกทางใช้สูตรเดียวกัน ComputeDailyFoodConsumptionByCoop):
+//  1. cron 06:00 น. (scheduler/cron.go)          -> RunDailyDeductionForAllUsers
+//  2. ตัวปลุกงานจากภายนอก เช่น cron-job.org      -> RunScheduledFoodDeductionHandler
+//  3. ตัดย้อนหลังตอนผู้ใช้เปิดแอป (ถ้าวันนี้ยังไม่ตัด) -> RunCatchUpDeduction
+//  4. ผู้ใช้กดปุ่ม "ตัดสต็อก" เอง                -> ForceDeductStockHandler
+//
+// ทำไมต้องมีหลายทาง: Render แพลนฟรีพักเซิร์ฟเวอร์เมื่อไม่มีคนใช้ ตอน 06:00 น. cron อาจไม่ได้ทำงาน
+//
+// ทุกครั้งที่ตัดสำเร็จ จะบันทึกยอดรายคอกลง food_distribution ด้วย
+// ใช้แสดงสรุปว่าคอกไหนกินไปเท่าไร และใช้เช็กว่า "วันนี้ตัดไปแล้วหรือยัง" (กันตัดซ้ำ)
+// GET /api/foods แยกที่ handleFoodsGet ใน routes.go: มี ?id= -> GetFoodstockHandler, ไม่มี -> GetAllFoodstocksHandler
 package handlers
 
 import (
@@ -14,8 +34,7 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// GetFoodstockHandler retrieves a single foodstock by ID
-// GET /api/foodstocks?id=1
+// GetFoodstockHandler (GET /api/foods?id=1) ดึงสต็อกแถวเดียว (เฉพาะของผู้ใช้) ไม่เจอ -> 404
 func GetFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -55,8 +74,9 @@ func GetFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(foodstock)
 }
 
-// GetAllFoodstocksHandler retrieves all foodstocks owned by the caller
-// GET /api/foodstocks
+// GetAllFoodstocksHandler (GET /api/foods) ดึงสต็อกทุกประเภทของผู้ใช้ (หน้าคลังอาหาร)
+// เรียก RunCatchUpDeduction ก่อน (ไม่ใช่ goroutine) เพื่อให้ตัดสต็อกที่ค้างเสร็จก่อน
+// ตัวเลขที่ผู้ใช้เห็นจึงเป็นยอดล่าสุดหลังตัดแล้ว
 func GetAllFoodstocksHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -84,8 +104,8 @@ func GetAllFoodstocksHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(foodstocks)
 }
 
-// UpdateFoodstockHandler manually corrects the current stock total
-// PUT /api/foodstocks?id=1
+// UpdateFoodstockHandler (PUT /api/foods?id=1) แก้ยอดคงเหลือให้ตรงกับของจริงที่นับได้
+// ไม่เจอ/ไม่ใช่ของผู้ใช้ -> 404
 func UpdateFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -138,8 +158,11 @@ func UpdateFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(foodstock)
 }
 
-// UpdateFoodMinQuantityHandler sets the owner-defined low-stock alert threshold, one value shared by all food types
-// PUT /api/foods/min-quantity  body: {"min_quantity": 50}
+// UpdateFoodMinQuantityHandler (PUT /api/foods/min-quantity) ตั้งปริมาณใกล้หมดสำหรับแจ้งเตือน body: {"min_quantity": 50}
+// ค่าเดียวใช้ร่วมกันทุกประเภทอาหาร และตั้งได้ครั้งเดียว
+//  - ต้องมากกว่า 0 ไม่งั้น 400
+//  - เคยตั้งแล้ว -> 409 (ล็อกแล้ว แก้ไขไม่ได้)
+//  - ยังไม่เคยนำเข้าอาหาร (ไม่มีแถวสต็อก) -> 404 ให้นำเข้าก่อน
 func UpdateFoodMinQuantityHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -183,8 +206,7 @@ func UpdateFoodMinQuantityHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]float64{"min_quantity": req.MinQuantity})
 }
 
-// DeleteFoodstockHandler deletes a foodstock
-// DELETE /api/foodstocks?id=1
+// DeleteFoodstockHandler (DELETE /api/foods?id=1) ลบแถวสต็อก ไม่เจอ -> 404
 func DeleteFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -229,8 +251,8 @@ func DeleteFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Foodstock deleted successfully"})
 }
 
-// GetFoodHistoryHandler retrieves the caller's history of food imports (importfood table)
-// GET /api/food_history
+// GetFoodHistoryHandler (GET /api/food_history) ดึงประวัติการนำเข้าอาหาร (ตาราง importfood)
+// ผลเหมือน GET /api/importfoods เก็บไว้ให้แอปรุ่นเดิมที่เรียก path นี้
 func GetFoodHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -256,9 +278,10 @@ func GetFoodHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(history)
 }
 
-// loadFoodAgeRules คืนตารางการให้อาหารที่เจ้าของฟาร์มกรอกไว้ในฐานข้อมูล (ช่วงอายุ → ประเภท
-// อาหาร + กรัม/ตัว/วัน) ถ้ายังไม่ได้กรอกหรืออ่านไม่ได้จะคืนตารางว่าง ซึ่งทำให้ไม่มีคอกไหน
-// ถูกคำนวณ/ตัดสต็อก - ไม่มีค่าตายตัวในโค้ดอีกต่อไป
+// loadFoodAgeRules ดึงตารางให้อาหารของผู้ใช้จาก DB ถ้าอ่านไม่ได้คืนตารางว่าง
+// ตารางว่าง = ไม่มีคอกไหนถูกคำนวณ/ตัดสต็อก (ไม่มีค่าตายตัวในโค้ด ผู้ใช้ต้องตั้งเอง)
+// ทำไมคืนตารางว่างแทน error: งานตัดสต็อกของผู้ใช้คนอื่นจะได้ทำต่อได้ ไม่พังทั้งรอบ
+// ถูกเรียกจาก: ฟังก์ชันตัดสต็อกทุกตัวในไฟล์นี้ และ coop_food_consumption.go
 func loadFoodAgeRules(userID int) models.FoodRules {
 	rules, err := database.GetFoodAgeRules(userID)
 	if err != nil {
@@ -267,12 +290,16 @@ func loadFoodAgeRules(userID int) models.FoodRules {
 	return rules
 }
 
-// ComputeDailyFoodConsumptionByCoop คืนยอดกก./วันของอาหารประเภท foodType แยกเป็น
-// รายคอก (เฉพาะคอกที่กำลังกินอาหารประเภทนี้อยู่จริง) - อิงจากจำนวนไก่จริงต่อคอก
-// (coop.Amount) คูณอัตรากก./ตัว/วันของช่วงอายุคอกนั้น (ตัดสินจาก Birthday ว่าอยู่
-// ช่วงเม็ดเล็ก/เม็ดใหญ่) ใช้ทั้งเป็นยอดตัดสต็อกรวม (sum ของผลลัพธ์นี้) และเป็น
-// breakdown ที่บันทึกลง food_distribution ทุกครั้งที่ตัดสต็อกอัตโนมัติ เพื่อให้หน้า
-// "สรุปผลอาหารแต่ละประเภท" ยังเห็นว่าคอกไหนกินไปเท่าไรได้ แม้ไม่มีใครกรอกเอง
+// ComputeDailyFoodConsumptionByCoop คำนวณ กก./วัน ของอาหารประเภท foodType แยกรายคอก
+// วนทุกคอก:
+//  1. ไม่มีวันเกิดไก่ -> ข้าม (ไม่รู้อายุ)
+//  2. อายุ (สัปดาห์) = (ตอนนี้ - วันเกิด) / 7
+//  3. rules.CoopFeed หาช่วงอายุที่ตรง -> ได้ประเภทอาหาร และ กก. = จำนวนไก่ x กรัม / 1000
+//  4. เก็บเฉพาะคอกที่กินอาหารประเภทนี้อยู่ และ กก. > 0
+//
+// คืนรายการ {coop_id, kg_given} ใช้ได้ 2 อย่าง:
+//   - รวมกันเป็นยอดที่ต้องตัดสต็อก
+//   - บันทึกลง food_distribution ให้รู้ว่าคอกไหนกินไปเท่าไร
 func ComputeDailyFoodConsumptionByCoop(coops []models.Coop, foodType string, rules models.FoodRules) []models.FoodDistributionItem {
 	now := time.Now()
 	items := make([]models.FoodDistributionItem, 0, len(coops))
@@ -296,11 +323,8 @@ func ComputeDailyFoodConsumptionByCoop(coops []models.Coop, foodType string, rul
 	return items
 }
 
-// ComputeDailyFoodConsumption รวมยอดกก./วัน ของอาหารประเภท foodType ที่คอกทั้งหมด
-// ที่ส่งมา (ของผู้ใช้คนเดียว) กินจริง - ผลรวมของ ComputeDailyFoodConsumptionByCoop
-// ใช้ร่วมกันทั้งตัวตัดสต็อกแมนนวล (ForceDeductStockHandler), Cron ตัดสต็อกประจำวัน
-// (scheduler.SetupJobs) และตัวประมาณการต่อคอกที่โชว์ในหน้าคลังอาหาร (GetCoopFoodConsumptionHandler)
-// เพื่อให้ตัวเลขตรงกันทุกจุด
+// ComputeDailyFoodConsumption รวมยอด กก./วัน ของทุกคอก (ผลรวมของ ComputeDailyFoodConsumptionByCoop)
+// สำหรับที่ต้องการแค่ยอดรวม ไม่ต้องการรายคอก
 func ComputeDailyFoodConsumption(coops []models.Coop, foodType string, rules models.FoodRules) float64 {
 	var total float64
 	for _, item := range ComputeDailyFoodConsumptionByCoop(coops, foodType, rules) {
@@ -309,11 +333,21 @@ func ComputeDailyFoodConsumption(coops []models.Coop, foodType string, rules mod
 	return total
 }
 
-// RunDailyDeductionForAllUsers ตัดสต็อกอาหารประจำวันให้ "ทุกผู้ใช้ในระบบ" (ไม่ใช่
-// แค่คนเดียว) - ตรรกะเดียวกับที่ scheduler.SetupJobs รันตอน 6 โมงเช้า (ICT) และที่
-// RunScheduledFoodDeductionHandler เรียกเมื่อถูกปลุกจากภายนอก แยกออกมาเป็นฟังก์ชัน
-// กลางจุดเดียว กันไม่ให้ลอจิกเดียวกันซ้ำอยู่ 2 ที่ (cron ในตัว vs endpoint ที่โดน
-// เรียกจากภายนอก) แล้วแก้ไม่ครบทั้งคู่ในอนาคต
+// RunDailyDeductionForAllUsers ตัดสต็อกอาหารประจำวันให้ "ทุกผู้ใช้ในระบบ"
+// คืนค่า: จำนวนผู้ใช้ที่ถูกตัดสต็อกสำเร็จ
+//
+// ขั้นตอน:
+//  1. ดึงคอกทั้งหมดจัดกลุ่มตามผู้ใช้ (GetAllCoopsGroupedByUser) query ครั้งเดียว
+//  2. แต่ละผู้ใช้ แต่ละประเภทอาหาร:
+//     - คำนวณยอดรายคอก แล้วรวม ถ้าเป็น 0 (ไม่มีคอกกินประเภทนี้) ข้าม
+//     - ตัดสต็อก (DeductFoodstockByType แบบทั้งหมดหรือไม่ตัดเลย)
+//     - สต็อกไม่พอ (shortfall > 0) -> ไม่ตัด log เตือน แล้วไปต่อ
+//     - ตัดสำเร็จ -> บันทึกยอดรายคอกลง food_distribution
+//  3. error ของผู้ใช้คนหนึ่งแค่ log แล้ว continue ไม่หยุดทั้งรอบ ผู้ใช้คนอื่นยังได้ตัด
+//
+// ต่างจาก RunCatchUpDeduction: ฟังก์ชันนี้ไม่เช็กวันที่ตัดล่าสุด (เรียกวันละครั้งตามเวลาที่ตั้งไว้)
+// ทำไมแยกเป็นฟังก์ชันกลาง: cron และตัวปลุกงานจากภายนอกใช้ร่วมกัน แก้ที่เดียวพอ
+// ถูกเรียกจาก: scheduler/cron.go และ RunScheduledFoodDeductionHandler
 func RunDailyDeductionForAllUsers() (deductedUsers int, err error) {
 	coopsByUser, err := database.GetAllCoopsGroupedByUser()
 	if err != nil {
@@ -356,15 +390,13 @@ func RunDailyDeductionForAllUsers() (deductedUsers int, err error) {
 	return deductedUsers, nil
 }
 
-// RunScheduledFoodDeductionHandler ให้ตัวปลุกงานจากภายนอก (เช่นบริการฟรีอย่าง
-// cron-job.org) เรียก URL นี้ตามเวลาที่ตั้งไว้ เพื่อตัดสต็อกอาหารประจำวันให้ทุก
-// ผู้ใช้ - มีไว้เพราะ Render แพลนฟรีจะพักเซิร์ฟเวอร์ทิ้งเมื่อไม่มีคนใช้ ทำให้ cron ที่
-// ฝังอยู่ในตัวโปรเซส (scheduler.SetupJobs) หรือตัวตัดสต็อกสำรองตอนเปิดหน้าแอป
-// (RunCatchUpDeduction) อาจไม่มีโอกาสได้รันเลยถ้าทั้งวันไม่มีใครเปิดแอป - คำขอ HTTP
-// จากภายนอกนี้เองที่ปลุกเซิร์ฟเวอร์ขึ้นมาทำงานได้โดยไม่ต้องพึ่งผู้ใช้เปิดแอปเลย
-// ป้องกันด้วย SCHEDULED_TASK_KEY (ดู auth.RequireScheduledTaskKey) แทน JWT เพราะ
-// ผู้เรียกไม่ใช่ผู้ใช้ที่ล็อกอิน
-// POST /api/system/food-deduction/run?key=xxx
+// RunScheduledFoodDeductionHandler (POST /api/system/food-deduction/run?key=xxx)
+// ให้บริการตั้งเวลาภายนอก (เช่น cron-job.org) ยิง URL นี้ทุกเช้า เพื่อตัดสต็อกให้ทุกผู้ใช้
+// ทำไมต้องมี: Render แพลนฟรีพักเซิร์ฟเวอร์ ถ้าทั้งวันไม่มีคนเปิดแอป cron ในตัวและ RunCatchUpDeduction
+// จะไม่ได้ทำงานเลย request จากภายนอกนี้เองที่ปลุกเซิร์ฟเวอร์ขึ้นมา
+// ป้องกันด้วย SCHEDULED_TASK_KEY (auth.RequireScheduledTaskKey) แทน JWT เพราะผู้เรียกไม่ใช่ผู้ใช้
+// ข้อควรระวัง: RunDailyDeductionForAllUsers ไม่ได้เช็กว่าวันนี้ตัดไปแล้วหรือยัง ถ้าเรียกซ้ำในวันเดียวจะตัดซ้ำ
+// จึงต้องตั้งให้เรียกวันละครั้ง ตอบกลับจำนวนผู้ใช้ที่ถูกตัด
 func RunScheduledFoodDeductionHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -387,15 +419,20 @@ func RunScheduledFoodDeductionHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RunCatchUpDeduction ตรวจว่า userID ถูกตัดสต็อกอาหารประจำวันของวันนี้ (ตามปฏิทินไทย)
-// ไปแล้วหรือยัง ถ้ายัง ตัดให้ทันที - มีฟังก์ชันนี้เพราะ cron ตอน 6 โมงเช้า
-// (scheduler.SetupJobs) ทำงานได้ก็ต่อเมื่อตัวโปรเซสเซิร์ฟเวอร์ "มีชีวิตอยู่" ณ
-// วินาทีนั้นจริงๆ แต่ Render แพลนฟรีจะพักโปรเซสทิ้งหลังไม่มีคนใช้ ~15 นาที แล้วจะตื่น
-// ขึ้นมาใหม่ก็ต่อเมื่อมี request เข้ามาเท่านั้น - ถ้าทั้งคืนไม่มีใครเปิดแอปเลย ตัวโปรเซส
-// อาจไม่ได้ทำงานอยู่ตอน 06:00 น. พอดี ทำให้ cron ที่ตั้งไว้ไม่มีโอกาสได้รันเลยสักครั้ง
-// โดยไม่มี error ให้เห็นที่ไหนเลย เรียกฟังก์ชันนี้ตอนเปิดหน้าคลังอาหาร (ซึ่งเป็น
-// request ที่ปลุกเซิร์ฟเวอร์ขึ้นมาแน่ๆ) เพื่อให้มีจุดสำรองที่ตัดสต็อกให้ได้ทุกวัน
-// ตราบใดที่ผู้ใช้เปิดแอปอย่างน้อยวันละครั้ง
+// RunCatchUpDeduction ตัดสต็อก "ย้อนหลัง" ให้ผู้ใช้คนเดียว ถ้าวันนี้ (ตามเวลาไทย) ยังไม่ได้ตัด
+//
+// ทำไมต้องมี: cron 06:00 น. ทำงานได้เฉพาะตอนเซิร์ฟเวอร์ตื่นอยู่ Render แพลนฟรีพักเซิร์ฟเวอร์
+// หลังไม่มีคนใช้ ~15 นาที ถ้าทั้งคืนไม่มีใครเปิดแอป cron จะพลาดโดยไม่มี error ให้เห็น
+// จึงใช้จังหวะที่ผู้ใช้เปิดแอปเป็นจุดสำรอง ตราบใดที่เปิดแอปวันละครั้ง สต็อกจะถูกตัดทุกวัน
+//
+// ขั้นตอน (ทำแยกแต่ละประเภทอาหาร):
+//  1. ดูวันที่ตัดล่าสุดจาก food_distribution (GetLatestDistributionDate)
+//     ถ้าเป็นวันนี้แล้ว = ตัดไปแล้ว ข้าม (กันตัดซ้ำ)
+//  2. คำนวณยอดรายคอก รวมแล้วเป็น 0 ข้าม
+//  3. ตัดสต็อก ถ้าไม่พอ ไม่ตัด (วันนี้ยังไม่มีบันทึก จึงจะลองใหม่ครั้งถัดไป เช่นหลังเติมสต็อก)
+//  4. ตัดสำเร็จ บันทึกยอดรายคอก (ซึ่งทำให้ครั้งต่อไปของวันนี้รู้ว่าตัดแล้ว)
+//
+// ถูกเรียกจาก: GetAllFoodstocksHandler (หน้าคลังอาหาร) และ GetAllCoopsHandler ใน coop.go (หน้าหลัก)
 func RunCatchUpDeduction(userID int) {
 	coops, err := database.GetAllCoops(userID)
 	if err != nil {
@@ -442,10 +479,14 @@ func RunCatchUpDeduction(userID int) {
 	}
 }
 
-// ForceDeductStockHandler อนุญาตให้เรียก API เพื่อตัดสต็อกแบบแมนนวล ต้องระบุประเภทอาหารก่อนตัดเสมอ
-// ยอดที่ตัดคำนวณจากจำนวนไก่จริงในคอกของผู้เรียก (userID) ที่กำลังกินอาหารประเภทนี้อยู่
-// (เหมือนกับยอดที่ Cron ตัดให้อัตโนมัติทุกเที่ยงคืน) ไม่ใช่ค่าคงที่ตายตัวอีกต่อไป
-// POST /api/foodstocks/force-deduct  body: {"food_type": "เม็ดเล็ก"}
+// ForceDeductStockHandler (POST /api/foodstocks/force-deduct) ผู้ใช้กดตัดสต็อกเอง
+// body: {"food_type": "เม็ดเล็ก"} ต้องระบุประเภทเสมอ
+// ยอดที่ตัดคำนวณจากจำนวนไก่จริงด้วยสูตรเดียวกับการตัดอัตโนมัติ (ไม่ใช่ค่าตายตัว)
+// ผลลัพธ์ที่เป็นไปได้ (ตอบ 200 ทุกกรณี พร้อมข้อความให้แสดง):
+//   - ไม่มีคอกกินประเภทนี้ -> "ไม่มีอะไรให้ตัด" deducted = 0
+//   - สต็อกไม่พอ -> ไม่ตัด บอกว่ามีเท่าไร ต้องการเท่าไร ขาดเท่าไร
+//   - สำเร็จ -> บันทึกยอดรายคอก แล้วบอกว่าตัดไปกี่ กก.
+//     (ถ้าบันทึกยอดรายคอกล้ม แค่ log เพราะสต็อกถูกตัดไปแล้ว ไม่ควรตอบว่าล้มทั้งคำขอ)
 func ForceDeductStockHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)

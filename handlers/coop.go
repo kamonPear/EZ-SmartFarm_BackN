@@ -1,3 +1,9 @@
+// =====================================================================================
+// ไฟล์ handlers/coop.go - API คอกไก่ (เพิ่ม / ดู / แก้ไข / ลบ)
+// =====================================================================================
+//
+// ข้อมูลอยู่ใน database/coop_repository.go
+// GET /api/coops แยกที่ handleCoopsGet ใน routes.go: มี ?id= -> GetCoopHandler, ไม่มี -> GetAllCoopsHandler
 package handlers
 
 import (
@@ -12,8 +18,12 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// CreateCoopHandler creates a new coop
-// POST /api/coops
+// CreateCoopHandler (POST /api/coops) เพิ่มคอกใหม่ (หน้า "เพิ่มคอกไก่")
+//  1. ต้องกรอก ชื่อคอก วันรับเข้าเลี้ยง จำนวนไก่ วันเกิดไก่ ครบ ไม่งั้น 400
+//  2. วันรับเข้าเลี้ยงต้องไม่ก่อนวันเกิดไก่ (เอาไก่เข้าคอกก่อนเกิดไม่ได้)
+//     ทำไมเช็กที่ backend ด้วย: ถ้าหน้าแอป/เว็บลืมเช็ก หรือมีคนยิง API ตรง ๆ ก็ยังถูกกัน
+//  3. บันทึก ถ้าชื่อคอกซ้ำในฟาร์มเดียวกัน -> 409
+//  4. สำเร็จ -> 201 พร้อมข้อมูลคอก
 func CreateCoopHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -68,8 +78,10 @@ func CreateCoopHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(coop)
 }
 
-// GetCoopHandler retrieves a single coop by ID
-// GET /api/coops?id=1
+// GetCoopHandler (GET /api/coops?id=1) ดึงคอกเดียวพร้อมอุปกรณ์ ไข่ สุขภาพ วัคซีน
+// เติมค่าเซนเซอร์ล่าสุดให้อุปกรณ์แต่ละตัว (attachLatestSensorValues ใน device.go)
+// หน้าจอจะได้แสดงอุณหภูมิ/แอมโมเนียปัจจุบันของคอกได้เลย
+// ไม่เจอ หรือไม่ใช่ของผู้ใช้ -> 404
 func GetCoopHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -112,8 +124,10 @@ func GetCoopHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(coop)
 }
 
-// GetAllCoopsHandler retrieves all coops owned by the caller
-// GET /api/coops
+// GetAllCoopsHandler (GET /api/coops) ดึงคอกทั้งหมดของผู้ใช้ ใช้ในหน้าหลักและหน้ารายการคอก
+// แถม: เรียก RunCatchUpDeduction (ตัดสต็อกอาหารที่ค้าง) แบบ goroutine
+// ทำไม: หน้านี้ถูกเปิดบ่อยที่สุด ถ้าเซิร์ฟเวอร์หลับไปตอน 06:00 น. จน cron ไม่ทำงาน
+// จะได้ตัดสต็อกย้อนหลังให้ตอนผู้ใช้เปิดแอป (ไม่ต้องรอผล เพราะหน้านี้ไม่ได้แสดงสต็อก)
 func GetAllCoopsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -144,8 +158,9 @@ func GetAllCoopsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(coops)
 }
 
-// UpdateCoopHandler updates an existing coop
-// PUT /api/coops?id=1
+// UpdateCoopHandler (PUT /api/coops?id=1) แก้ไขข้อมูลคอก (หน้า "แก้ไขข้อมูลคอกไก่")
+//   - ถ้าส่งมาทั้งวันรับเข้าเลี้ยงและวันเกิด วันรับเข้าเลี้ยงต้องไม่ก่อนวันเกิด
+//   - ไม่เจอ/ไม่ใช่ของผู้ใช้ -> 404, ชื่อซ้ำ -> 409
 func UpdateCoopHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -211,8 +226,8 @@ func UpdateCoopHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(coop)
 }
 
-// DeleteCoopHandler deletes a coop
-// DELETE /api/coops?id=1
+// DeleteCoopHandler (DELETE /api/coops?id=1) ลบคอกพร้อมข้อมูลทั้งหมดในคอก
+// (database.DeleteCoop ทำใน Transaction) ไม่เจอ -> 404
 func DeleteCoopHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)

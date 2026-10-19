@@ -1,3 +1,10 @@
+// =====================================================================================
+// ไฟล์ database/user_repository.go - บัญชีผู้ใช้ (ตาราง User)
+// =====================================================================================
+//
+// ระบบไม่มีหน้าสมัครสมาชิก ผู้ดูแลเป็นคนสร้างบัญชีให้เจ้าของฟาร์มผ่าน API ที่ต้องใช้ X-Admin-Key
+// รหัสผ่านเก็บเป็น hash ของ bcrypt เสมอ (ดู auth/password.go) ไม่เก็บรหัสผ่านจริง
+// ถูกเรียกจาก: handlers/auth.go (login, register, ลบผู้ใช้, ดูข้อมูลตัวเอง)
 package database
 
 import (
@@ -12,6 +19,14 @@ import (
 // สมมติว่าตัวแปร DB ในโปรเจกต์ของคุณมีการประกาศเป็น *gorm.DB เอาไว้แล้ว
 // เช่น var DB *gorm.DB
 
+// GetUserByUsername ค้นหาผู้ใช้จาก username
+//   - เจอ -> คืนข้อมูลผู้ใช้
+//   - ไม่เจอ -> คืน (nil, nil) ไม่ใช่ error เพราะ "ไม่มีผู้ใช้นี้" เป็นกรณีปกติตอน login ผิด
+//   - error อื่น (DB ล่ม) -> คืน error
+//
+// ข้อควรรู้: MySQL เทียบ username แบบไม่สนตัวพิมพ์เล็กใหญ่ ("Kkk" เจอ "kkk")
+// LoginHandler จึงเทียบซ้ำใน Go อีกชั้นให้ต้องตรงทุกตัวอักษร
+// ถูกเรียกจาก: handlers/auth.go -> LoginHandler
 func GetUserByUsername(username string) (*models.User, error) {
 	var user models.User
 
@@ -32,7 +47,8 @@ func GetUserByUsername(username string) (*models.User, error) {
 
 // เพิ่มฟังก์ชันนี้ต่อท้ายไฟล์ database/user_repository.go ที่มีอยู่เดิม
 
-// ฟังก์ชันสร้างผู้ใช้ใหม่ลงตาราง User
+// CreateNewUser บันทึกผู้ใช้ใหม่ลงตาราง (ทำงานเหมือน CreateUser)
+// เป็นฟังก์ชันเก่า ตอนนี้ไม่มีที่ไหนเรียกใช้ ใช้ CreateUser แทน
 func CreateNewUser(user *models.User) error {
 	// GORM จะทำการ INSERT ข้อมูลลงตารางให้ทันที
 	result := DB.Create(user)
@@ -42,13 +58,14 @@ func CreateNewUser(user *models.User) error {
 	return nil
 }
 
-// CreateUser creates a new user with the given username and password hash.
-// Used by the admin-only register endpoint.
+// CreateUser บันทึกผู้ใช้ใหม่ (username + hash ของรหัสผ่าน) ลงตาราง User
+// ถูกเรียกจาก: handlers/auth.go -> RegisterHandler (ใช้ได้เฉพาะผู้ถือ X-Admin-Key)
 func CreateUser(user *models.User) error {
 	return DB.Create(user).Error
 }
 
-// GetUserByID retrieves a user by their primary key id, or ErrNotFound if none exists.
+// GetUserByID ค้นหาผู้ใช้จาก id (คอลัมน์ id_User) ไม่เจอคืน ErrNotFound
+// ถูกเรียกจาก: handlers/auth.go -> MeHandler (GET /api/auth/me ดูข้อมูลของตัวเองจาก JWT)
 func GetUserByID(id int) (*models.User, error) {
 	var user models.User
 	if err := DB.Where("id_User = ?", id).First(&user).Error; err != nil {
@@ -60,7 +77,8 @@ func GetUserByID(id int) (*models.User, error) {
 	return &user, nil
 }
 
-// UsernameExists reports whether a user with the given username already exists.
+// UsernameExists เช็กว่า username นี้มีคนใช้แล้วหรือยัง (นับจำนวนแถวที่ชื่อตรงกัน)
+// ถูกเรียกจาก: handlers/auth.go -> RegisterHandler ก่อนสร้างบัญชี เพื่อกันชื่อซ้ำ
 func UsernameExists(username string) (bool, error) {
 	var count int64
 	if err := DB.Model(&models.User{}).Where("username = ?", username).Count(&count).Error; err != nil {
@@ -69,11 +87,20 @@ func UsernameExists(username string) (bool, error) {
 	return count > 0, nil
 }
 
-// DeleteUser permanently removes userID's account and every row owned by them,
-// directly or through a coop they own - nothing is left behind. All in one
-// transaction so a failure partway through leaves nothing deleted rather than a
-// half-wiped account. Does NOT touch the `vaccine` table (types are shared/global
-// across every user, not owned by any one of them - see models/vaccine.go).
+// DeleteUser ลบบัญชีผู้ใช้ "และข้อมูลทุกอย่างของผู้ใช้คนนั้น" แบบถาวร
+//
+// ใช้ Transaction (DB.Begin ... Commit): ถ้าลบขั้นไหนล้ม จะ Rollback ยกเลิกทั้งหมด
+// ไม่มีกรณีลบไปครึ่งเดียว
+//
+// ลำดับการลบ (ต้องลบ "ลูก" ก่อน "แม่" ไม่งั้นติด Foreign Key):
+//  1. หา coop_id ทุกคอกของผู้ใช้ (Pluck = ดึงคอลัมน์เดียวมาเป็น slice)
+//  2. ลบข้อมูลที่ผูกกับคอก: ค่าเซนเซอร์ -> นัดตรวจ -> อุปกรณ์ -> ไข่ -> ผลตรวจสุขภาพ -> ประวัติวัคซีน -> คอก
+//  3. ลบข้อมูลที่ผูกกับผู้ใช้โดยตรง: ค่ามาตรฐาน, กฎอาหารตามอายุ, ผังฟาร์ม, คลังอาหาร,
+//     ล็อตนำเข้า, ประวัติแจกจ่าย, ชนิดอุปกรณ์, ประเภทวัคซีน
+//  4. ลบแถวผู้ใช้
+//  5. Commit ยืนยันทั้งหมด
+//
+// ถูกเรียกจาก: handlers/auth.go -> DeleteUserHandler (DELETE /api/auth/users ต้องใช้ X-Admin-Key)
 func DeleteUser(userID int) error {
 	tx := DB.Begin()
 

@@ -1,9 +1,12 @@
+// =====================================================================================
+// ไฟล์ models/importfood_request.go - รูปแบบ JSON ตอนนำเข้าอาหาร
+// =====================================================================================
 package models
 
 import "time"
 
-// CreateImportFoodRequest represents the request payload for recording a new food import lot.
-// Creating an import lot also adds ImportVolume onto the current Foodstock total for FoodType.
+// CreateImportFoodRequest body ของ POST /api/importfoods: ประเภท, ปริมาณ, วันหมดอายุ
+// บันทึกแล้วจะบวก ImportVolume เข้ายอดคงเหลือของประเภทนั้นด้วย (วันที่นำเข้า backend ใส่ให้)
 type CreateImportFoodRequest struct {
 	FoodType     string    `json:"food_type" binding:"required"`
 	ImportVolume int       `json:"import_volume" binding:"required,min=0"`
@@ -13,7 +16,7 @@ type CreateImportFoodRequest struct {
 	MinQuantity *float64 `json:"min_quantity,omitempty"`
 }
 
-// ImportFoodResponse represents the response payload for an import food lot
+// ImportFoodResponse รูปแบบตอบกลับแบบย่อ ตอนนี้ไม่มีที่ไหนใช้ (API ส่ง ImportFood ตรง ๆ)
 type ImportFoodResponse struct {
 	LotID        int       `json:"lot_id"`
 	FoodType     string    `json:"food_type"`

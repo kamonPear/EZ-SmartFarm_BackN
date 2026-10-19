@@ -1,3 +1,22 @@
+// =====================================================================================
+// ไฟล์ handlers/vaccine.go - API วัคซีน/ยา ทั้งหมด (ไฟล์ใหญ่ที่สุดของ handlers)
+// =====================================================================================
+//
+// มี 2 เรื่องที่ต้องแยกให้ออก:
+//
+//	A) "ประเภท" วัคซีน/ยา (ตาราง vaccine) = เกณฑ์ที่ผู้ใช้ตั้ง: ชื่อ, วิธีให้, ช่วงอายุ min_age_days - max_age_days
+//	   API: /api/vaccines/schedule ...  (หน้า "เพิ่มประเภทวัคซีน/ยา")
+//	B) "ประวัติการให้จริง" (ตาราง vaccine_history) = คอกไหนได้วัคซีนอะไร วันไหน
+//	   API: /api/vaccines  (ข้อมูลอยู่ใน database/vaccine_repository.go)
+//
+// หลักคิดวันครบกำหนดให้วัคซีน (ใช้ซ้ำหลายฟังก์ชัน และใน calendar.go):
+//
+//	วันครบกำหนด = วันเกิดไก่ + min_age_days
+//	- ถ้าช่วงอายุจบ (วันเกิด + max_age_days) ก่อนวันรับเข้าเลี้ยง -> ไก่โตเกินช่วงก่อนมาถึงฟาร์ม
+//	  (น่าจะได้รับจากที่อื่นแล้ว) ไม่ต้องแจ้งเตือน
+//	- ถ้าวันครบกำหนดอยู่ก่อนวันรับเข้าเลี้ยง -> เลื่อนเป็นวันรับเข้าเลี้ยง (ให้ได้ทันทีที่รับมา)
+//
+// "ให้แล้วหรือยัง" ดูจากว่ามีแถวใน vaccine_history ที่ (coop_id, ชื่อวัคซีน) ตรงกันไหม
 package handlers
 
 import (
@@ -14,8 +33,10 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// CreateVaccineHandler records a new vaccine administration for a coop
-// POST /api/vaccines
+// CreateVaccineHandler (POST /api/vaccines) บันทึกประวัติการให้วัคซีน 1 ครั้ง
+// ต้องมี coop_id, ชื่อ, วิธีให้, วันที่ให้ ไม่งั้น 400
+// โหลดคอกผ่าน GetCoopByIDForUser (เช็กเจ้าของไปด้วย) ไม่ใช่ของผู้ใช้ -> 404
+// แล้วส่งคอกให้ database.CreateVaccine คัดลอกชื่อคอก/วันเกิดไก่ลงประวัติ สำเร็จ -> 201
 func CreateVaccineHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -63,8 +84,8 @@ func CreateVaccineHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(vaccine)
 }
 
-// UpdateVaccineHandler updates an existing vaccine record
-// PUT /api/vaccines?id={id}
+// UpdateVaccineHandler (PUT /api/vaccines?id=) แก้ไขประวัติการให้วัคซีน
+// (หน้าต่าง "แก้ไข บันทึกวัคซีน" ในหน้าแก้ไขข้อมูลคอก) ไม่เจอ/ไม่ใช่ของผู้ใช้ -> 404
 func UpdateVaccineHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -112,8 +133,10 @@ func UpdateVaccineHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(vaccine)
 }
 
-// GetVaccineHandler retrieves vaccine records (ประวัติการฉีดจริง)
-// GET /api/vaccines
+// GetVaccineHandler (GET /api/vaccines) ดึงประวัติการให้วัคซีน รองรับ 3 แบบ:
+//   - ?id=      : รายการเดียว
+//   - ?coop_id= : ทั้งหมดของคอกนั้น (หน้าต่าง "ดูประวัติ")
+//   - ไม่ใส่    : ทุกคอกของผู้ใช้
 func GetVaccineHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -194,8 +217,10 @@ func GetVaccineHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(vaccines)
 }
 
-// DeleteVaccineHandler deletes a vaccine record
-// DELETE /api/vaccines
+// DeleteVaccineHandler (DELETE /api/vaccines) ลบประวัติการให้วัคซีน รองรับ 2 แบบ:
+//   - ?id=      : ลบรายการเดียว
+//   - ?coop_id= : ลบทั้งหมดของคอกนั้น (DeleteVaccinesByCoopIDForUser เช็กเจ้าของก่อน)
+//     ไม่ใส่ทั้งคู่ -> 400
 func DeleteVaccineHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -272,10 +297,9 @@ func DeleteVaccineHandler(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Missing vaccine_id or coop_id parameter", http.StatusBadRequest)
 }
 
-// scheduleRequest คือรูปแบบ JSON ที่เว็บ/แอปส่งมาตอนเพิ่ม/แก้ไข "ประเภท" ยา/วัคซีน
-// - แยกจาก models.Vaccine เพื่อให้ชื่อฟิลด์ที่ client คุ้นเคยอยู่แล้ว
-// (name/method/min_age_days/max_age_days/description) ไม่เปลี่ยน แม้ข้างในจะย้ายไป
-// เก็บในตาราง vaccine ร่วมกับประวัติการให้จริงแล้วก็ตาม
+// scheduleRequest JSON ที่แอป/เว็บส่งมาตอนเพิ่ม/แก้ไข "ประเภท" วัคซีน/ยา
+// แยกจาก models.Vaccine เพื่อคงชื่อ field เดิมที่ฝั่งแอปใช้อยู่ (เช่น description แทน note)
+// แม้ข้างในฐานข้อมูลจะเปลี่ยนโครงสร้างไปแล้ว แอปก็ไม่ต้องแก้
 type scheduleRequest struct {
 	Name        string `json:"name"`
 	Method      string `json:"method"`
@@ -284,8 +308,8 @@ type scheduleRequest struct {
 	Description string `json:"description"`
 }
 
-// scheduleView คือรูปแบบที่ GET /vaccines/schedule คืนให้ต่อแถว - หน้าตาเดิมเป๊ะกับ
-// ตอนที่ยังเป็นตาราง medicine_schedules แยกต่างหาก (client ฝั่งไหนก็ไม่ต้องแก้)
+// scheduleView รูปแบบข้อมูล "ประเภท" วัคซีนที่ส่งกลับให้แอป/เว็บ
+// หน้าตาเหมือนตอนที่ยังเป็นตาราง medicine_schedules แยกในรุ่นเก่า ฝั่งแอปจึงไม่ต้องแก้
 type scheduleView struct {
 	ID          int    `json:"id"`
 	Name        string `json:"name"`
@@ -295,6 +319,8 @@ type scheduleView struct {
 	Description string `json:"description"`
 }
 
+// vaccineToScheduleView แปลงแถว models.Vaccine จาก DB เป็น scheduleView ที่ส่งให้แอป
+// (เช่น Note ใน DB -> description ใน JSON)
 func vaccineToScheduleView(v models.Vaccine) scheduleView {
 	return scheduleView{
 		ID:          v.VaccineID,
@@ -306,9 +332,11 @@ func vaccineToScheduleView(v models.Vaccine) scheduleView {
 	}
 }
 
-// AddCustomMedicineHandler รับข้อมูล POST จากแอป Flutter มาบันทึกลงฐานข้อมูล - บันทึก
-// เป็นแถวใหม่ในตาราง vaccine (เก็บแค่ "ประเภท" ยา/วัคซีนเท่านั้น ไม่ปนกับประวัติให้จริง)
-// POST /api/vaccines/schedule
+// AddCustomMedicineHandler (POST /api/vaccines/schedule) เพิ่ม "ประเภท" วัคซีน/ยาใหม่
+// (หน้า "เพิ่มประเภทวัคซีน/ยา" ชื่อ, วิธีให้, ช่วงอายุ, คำอธิบาย)
+//  1. กันชื่อซ้ำในฟาร์มเดียวกัน แบบไม่สนตัวพิมพ์ ซ้ำ -> 409 พร้อมข้อความไทย
+//     ทำไมต้องกันซ้ำ: ระบบจับคู่ประวัติกับประเภทด้วย "ชื่อ" ถ้าชื่อซ้ำจะแยกไม่ออก
+//  2. บันทึกลงตาราง vaccine (ผูก user_id) ตอบ 201
 func AddCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -368,8 +396,8 @@ func AddCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetMedicineSchedulesHandler คืนรายการ "ประเภท" ยา/วัคซีนทั้งหมดที่มีอยู่ในระบบ
-// GET /api/vaccines/schedule
+// GetMedicineSchedulesHandler (GET /api/vaccines/schedule) ดึงประเภทวัคซีน/ยาทั้งหมดของผู้ใช้
+// เรียงตามชื่อ ใช้แสดงรายการในหน้าวัคซีน
 func GetMedicineSchedulesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -398,8 +426,13 @@ func GetMedicineSchedulesHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(schedules)
 }
 
-// GetRecommendedVaccinesHandler ค้นหายาจาก Database ที่เหมาะสมกับอายุไก่
-// GET /api/vaccines/recommended
+// GetRecommendedVaccinesHandler (GET /api/vaccines/recommended?coop_id=) แนะนำวัคซีนตามอายุไก่
+// มี coop_id:
+//  1. โหลดคอก (เช็กเจ้าของ) คำนวณอายุไก่เป็นวัน (models.CalculateChickenAge)
+//  2. ถ้ายังไม่ถึงวันรับเข้าเลี้ยง -> ส่งรายการว่าง (ยังไม่มีไก่ในฟาร์ม)
+//  3. หาประเภทที่ min_age_days <= อายุ <= max_age_days
+//
+// ไม่มี coop_id: ส่งประเภททั้งหมดของผู้ใช้กลับไป
 func GetRecommendedVaccinesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -491,11 +524,8 @@ func GetRecommendedVaccinesHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-
-
-// matchingCoop คือหนึ่งแถวผลลัพธ์ของ GetVaccineMatchingCoopsHandler - คอกที่ตอนนี้
-// อายุเข้าเกณฑ์ของวัคซีนตัวนี้แล้ว (และยังไม่เคยให้) "due" = อยู่ในช่วงอายุพอดี,
-// "overdue" = อายุเลย max_age_days ไปแล้วแต่ยังไม่เคยให้
+// matchingCoop 1 แถวผลลัพธ์ของ GetVaccineMatchingCoopsHandler = คอกที่ต้องให้วัคซีนตัวนี้
+// Status: "due" = อายุอยู่ในช่วงพอดี, "overdue" = อายุเลย max_age_days แล้วแต่ยังไม่เคยให้
 type matchingCoop struct {
 	CoopID         int    `json:"coop_id"`
 	NameCoop       string `json:"name_coop"`
@@ -503,11 +533,14 @@ type matchingCoop struct {
 	Status         string `json:"status"`
 }
 
-// GetVaccineMatchingCoopsHandler ตอบคำถาม "วัคซีนตัวนี้ต้องให้คอกไหนบ้าง" โดยเอาอายุ
-// ปัจจุบันของแต่ละคอก (คำนวณจากวันเกิด เหมือน GetRecommendedVaccinesHandler) มาเทียบ
-// กับช่วงอายุ (min_age_days-max_age_days) ของวัคซีนประเภทนี้ - ข้ามคอกที่ให้วัคซีนนี้
-// ไปแล้ว เพราะไม่ใช่คอกที่ "ต้องให้" อีกต่อไป
-// GET /api/vaccines/schedule/matching-coops?id=5
+// GetVaccineMatchingCoopsHandler (GET /api/vaccines/schedule/matching-coops?id=5)
+// ตอบคำถาม "วัคซีนตัวนี้ต้องให้คอกไหนบ้าง"
+//  1. โหลดประเภทวัคซีน (เฉพาะของผู้ใช้) ไม่เจอ -> 404
+//  2. ดึงคอกที่เคยให้วัคซีนตัวนี้แล้วจาก vaccine_history ทำเป็น map
+//  3. วนทุกคอก ข้ามคอกที่: ไม่มีวันเกิด/วันรับเข้า, ให้ไปแล้ว, ยังไม่ถึงวันรับเข้าเลี้ยง, อายุยังไม่ถึงขั้นต่ำ
+//  4. ที่เหลือคือคอกที่ต้องให้ ระบุว่า due หรือ overdue
+//
+// คอกที่ไม่มีชื่อ แสดงเป็น "คอกที่ <id>"
 func GetVaccineMatchingCoopsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -605,7 +638,9 @@ func GetVaccineMatchingCoopsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// โครงสร้างสำหรับส่งให้หน้าปฏิทิน Flutter
+// CalendarAlertResponse 1 รายการแจ้งเตือนวัคซีนบนปฏิทิน
+// ID เป็นรูปแบบ "<coop_id>_<ชื่อวัคซีน>" เช่น "26_vitaminB5" ใช้อ้างอิงตอนกดเสร็จสิ้น/ลบ
+// Date = วันครบกำหนด (YYYY-MM-DD), IsCompleted = ให้แล้วหรือยัง
 type CalendarAlertResponse struct {
 	ID            string `json:"id"`
 	Date          string `json:"date"`
@@ -618,10 +653,24 @@ type CalendarAlertResponse struct {
 	Description   string `json:"description"`
 }
 
-// GetVaccineCalendarAlertsHandler ค้นหาจุดแจ้งเตือนของปฏิทินจาก Database
-// รองรับ GET (ดึงข้อมูล), PUT (อัปเดตสถานะ), และ DELETE (ลบวัคซีน)
+// GetVaccineCalendarAlertsHandler (/api/vaccines/alerts) ฟังก์ชันเดียวรองรับ 3 method:
+//
+// DELETE ?id=<coop>_<ชื่อ> : ลบ "ประเภท" วัคซีนชื่อนี้ (ของผู้ใช้) และประวัติการให้ชื่อนี้ทั้งหมด
+//
+//	วัคซีนตัวนี้จะไม่แจ้งเตือนอีก จำกัดด้วย user_id กันไปลบของฟาร์มอื่นที่ชื่อซ้ำ
+//
+// PUT ?id=<coop>_<ชื่อ> : กด "เสร็จสิ้น" / "ยกเลิก" (body: is_completed, method, chicken_age, note)
+//   - เสร็จสิ้น: ถ้ายังไม่มีประวัติ จะเช็กว่าถึงวันครบกำหนดหรือยัง (ยังไม่ถึง -> 400 กดก่อนไม่ได้)
+//     แล้วสร้างแถวใน vaccine_history (ใช้วันเกิดไก่จริงของคอก ไม่ใช่เวลาที่กด)
+//   - ยกเลิก: ลบประวัติของ (คอก, วัคซีน) นั้น
+//
+// GET : สร้างรายการแจ้งเตือนทุกคอก x ทุกประเภทวัคซีน ตามหลักวันครบกำหนดด้านบนของไฟล์
+//
+//	และใส่ IsCompleted จากประวัติ (IsOverdue ส่ง false เสมอ ปฏิทินหลักใช้ /api/calendar/markers ที่คำนวณจริง)
+//
+// ข้อสังเกต: แยก id ด้วย "_" ถ้าชื่อวัคซีนมี "_" จะได้ชื่อแค่ส่วนแรก
 func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
-	
+
 	// ==========================================
 	// 🌟 1. จัดการคำสั่ง DELETE (ลบข้อมูลวัคซีนออกจากฐานข้อมูล)
 	// ==========================================
@@ -877,7 +926,8 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(alerts)
 }
 
-// โครงสร้างสำหรับตอบกลับการแจ้งเตือนให้แอป Flutter
+// NotificationResponse 1 รายการแจ้งเตือนวัคซีนที่ส่งให้แอป Flutter
+// (ชื่อวัคซีน, ชื่อคอก, วันที่ dd/mm/yyyy, เป็นของวันนี้หรือพรุ่งนี้)
 type NotificationResponse struct {
 	Name       string `json:"name"`
 	CoopName   string `json:"coop_name"`
@@ -885,8 +935,13 @@ type NotificationResponse struct {
 	IsToday    bool   `json:"is_today"` // เพิ่มตัวแปรนี้เพื่อบอกแอปว่าเป็นของวันนี้ใช่หรือไม่
 }
 
-// GetVaccineNotificationsHandler คำนวณหาคิววัคซีนของ "วันนี้" และ "วันพรุ่งนี้"
-// GET /api/notifications/vaccines
+// GetVaccineNotificationsHandler (GET /api/notifications/vaccines) หาวัคซีนที่ครบกำหนด "วันนี้" และ "พรุ่งนี้"
+// วนทุกคอก x ทุกประเภทวัคซีน:
+//   - ข้ามคอกที่พรุ่งนี้ยังไม่ถึงวันรับเข้าเลี้ยง และวัคซีนที่ช่วงอายุจบก่อนรับเข้าเลี้ยง
+//   - อายุไก่วันนี้ == min_age_days -> แจ้งเตือนของวันนี้
+//   - อายุไก่พรุ่งนี้ == min_age_days -> แจ้งเตือนของพรุ่งนี้
+//
+// ใช้แสดงในหน้าแจ้งเตือนของแอป ไม่มีเลยส่ง [] (ไม่ใช่ null กันแอปแครช)
 func GetVaccineNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -974,6 +1029,8 @@ func GetVaccineNotificationsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(notifications)
 }
 
+// GetHealthCheckNotiHandler (GET /api/notifications/health_checks) แจ้งเตือนตรวจสุขภาพวันนี้/พรุ่งนี้
+// ข้อมูลจาก database.GetHealthCheckNotifications ไม่มีเลยส่ง [] กันแอปแครช
 func GetHealthCheckNotiHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -1005,10 +1062,12 @@ func GetHealthCheckNotiHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("✓ Retrieved %d health check notifications", len(notifications))
 }
 
-// UpdateCustomMedicineHandler อัปเดตข้อมูลเกณฑ์วัคซีน
-// PUT /api/vaccines/schedule/update
-// UpdateCustomMedicineHandler อัปเดตข้อมูลเกณฑ์วัคซีน
-// PUT /api/vaccines/schedule/update
+// UpdateCustomMedicineHandler (PUT /api/vaccines/schedule/update?old_name=ชื่อเดิม) แก้ไขประเภทวัคซีน/ยา
+//  1. อ้างแถวด้วย "ชื่อเดิม" + user_id แล้วอัปเดตชื่อ วิธีให้ ช่วงอายุ คำอธิบาย
+//  2. ถ้าเปลี่ยนชื่อ อัปเดตชื่อในประวัติการให้ (vaccine_history) ของคอกผู้ใช้ด้วย
+//     ทำไม: ระบบจับคู่ประวัติกับประเภทด้วยชื่อ ถ้าไม่แก้ตาม วัคซีนที่ให้ไปแล้วจะกลายเป็น "ยังไม่ให้"
+//
+// จำกัดด้วย user_id ทั้งสองขั้น กันไปแก้ของฟาร์มอื่นที่ตั้งชื่อวัคซีนซ้ำกัน
 func UpdateCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
