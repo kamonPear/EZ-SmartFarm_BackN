@@ -126,7 +126,7 @@ func GetCoopHandler(w http.ResponseWriter, r *http.Request) {
 
 // GetAllCoopsHandler (GET /api/coops) ดึงคอกทั้งหมดของผู้ใช้ ใช้ในหน้าหลักและหน้ารายการคอก
 // แถม: เรียก RunCatchUpDeduction (ตัดสต็อกอาหารที่ค้าง) แบบ goroutine
-// ทำไม: หน้านี้ถูกเปิดบ่อยที่สุด ถ้าเซิร์ฟเวอร์หลับไปตอน 06:00 น. จน cron ไม่ทำงาน
+// ทำไม: หน้านี้ถูกเปิดบ่อยที่สุด ถ้าเซิร์ฟเวอร์หลับไปตอน 18:00 น. จน cron ไม่ทำงาน
 // จะได้ตัดสต็อกย้อนหลังให้ตอนผู้ใช้เปิดแอป (ไม่ต้องรอผล เพราะหน้านี้ไม่ได้แสดงสต็อก)
 func GetAllCoopsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

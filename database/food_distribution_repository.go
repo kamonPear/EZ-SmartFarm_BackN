@@ -2,7 +2,7 @@
 // ไฟล์ database/food_distribution_repository.go - ประวัติ "การแจกจ่ายอาหาร" ให้แต่ละคอก
 // =====================================================================================
 //
-// ทุกครั้งที่ตัดสต็อกอาหาร (อัตโนมัติ 06:00 น. หรือกด "ตัดสต็อก" เอง) ระบบจะบันทึกว่า
+// ทุกครั้งที่ตัดสต็อกอาหาร (อัตโนมัติ 18:00 น. หรือกด "ตัดสต็อก" เอง) ระบบจะบันทึกว่า
 // แต่ละคอกได้อาหารประเภทไหนไปกี่กิโลกรัม เก็บในตาราง food_distributions
 // ใช้แสดง "ประวัติการนำออก/แจกจ่ายอาหาร" ในหน้าคลังอาหาร และใช้เช็กว่าวันนี้ตัดสต็อกไปแล้วหรือยัง
 package database
@@ -65,7 +65,7 @@ func GetFoodDistributionHistory(foodType string, userID int) ([]models.FoodDistr
 // คืนค่า (เวลา, เจอไหม, error) ถ้าไม่เคยตัดเลยคืน found = false
 //
 // ใช้ทำอะไร: handlers/foodstock.go (ตัวตัดสต็อกตามหลัง / catch-up) เช็กว่า "วันนี้ตัดไปแล้วหรือยัง"
-// กันการตัดซ้ำสองครั้งในวันเดียว กรณีเซิร์ฟเวอร์ Render หลับไปตอน 06:00 แล้วตื่นทีหลัง
+// กันการตัดซ้ำสองครั้งในวันเดียว กรณีเซิร์ฟเวอร์ Render หลับไปตอน 18:00 แล้วตื่นทีหลัง
 func GetLatestDistributionDate(userID int, foodType string) (time.Time, bool, error) {
 	var row models.FoodDistribution
 	err := DB.Where("user_id = ? AND food_type = ?", userID, foodType).

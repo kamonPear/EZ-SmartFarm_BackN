@@ -14,7 +14,7 @@
 //  database/  -> ต่อ DB + migration
 //  routes/    -> แผนที่ URL -> handler
 //  services/  -> MQTT และตัวเช็กออฟไลน์
-//  scheduler/ -> งานตั้งเวลา (cron) ตัดสต็อกอาหาร 06:00 น.
+//  scheduler/ -> งานตั้งเวลา (cron) ตัดสต็อกอาหาร 18:00 น.
 package main
 
 import (
@@ -48,7 +48,7 @@ import (
 //  4. routes.SetupRoutes(db) ลงทะเบียน API ทุกเส้น (routes/routes.go)
 //  5. go services.StartMQTTWorker() / go services.StartOfflineChecker()
 //     คำว่า go ข้างหน้า = รันเป็น goroutine (งานคู่ขนาน) จะได้ไม่บล็อกการเปิดเซิร์ฟเวอร์
-//  6. scheduler.SetupJobs() ตั้ง cron ตัดสต็อกอาหารทุกวัน 06:00 น. (scheduler/cron.go)
+//  6. scheduler.SetupJobs() ตั้ง cron ตัดสต็อกอาหารทุกวัน 18:00 น. (scheduler/cron.go)
 //  7. goroutine รอสัญญาณ Ctrl+C / SIGTERM (ตอน Render สั่งปิด) แล้วปิด DB ให้เรียบร้อยก่อนออก
 //  8. http.ListenAndServe เปิดเซิร์ฟเวอร์ที่พอร์ตที่ตั้งไว้ โดยครอบทุก request ด้วย enableCORS
 func main() {

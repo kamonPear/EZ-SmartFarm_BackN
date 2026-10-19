@@ -138,7 +138,7 @@ func RequireAdminKey(next http.HandlerFunc) http.HandlerFunc {
 // RequireScheduledTaskKey = ยามสำหรับ API ที่ "เครื่อง" เรียก ไม่ใช่คน
 // ใช้กับ POST /api/system/food-deduction/run (ตัดสต็อกอาหารประจำวัน)
 //
-// ทำไมต้องมี: Render แบบฟรีจะปิดเซิร์ฟเวอร์เมื่อไม่มีคนใช้ cron ภายใน (scheduler) อาจไม่ได้รันตอน 06:00 น.
+// ทำไมต้องมี: Render แบบฟรีจะปิดเซิร์ฟเวอร์เมื่อไม่มีคนใช้ cron ภายใน (scheduler) อาจไม่ได้รันตอน 18:00 น.
 // จึงให้บริการภายนอกเช่น cron-job.org ยิงมาปลุกและสั่งตัดสต็อกแทน บริการนั้นไม่มี JWT
 // จึงใช้รหัสลับ SCHEDULED_TASK_KEY แทน
 //
