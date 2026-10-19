@@ -49,6 +49,31 @@ func GetMotionAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rows)
 }
 
+// GetOfflineSensorsHandler returns the caller's sensors that are currently not
+// working (Offline), so web and mobile clients can raise a "sensor down" alert.
+func GetOfflineSensorsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	rows, err := database.GetOfflineSensorsForUser(userID)
+	if err != nil {
+		log.Printf("GetOfflineSensorsHandler: failed to fetch offline sensors for user %d: %v", userID, err)
+		http.Error(w, "Failed to fetch offline sensors", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rows)
+}
+
 // ReceiveSensorDataHandler handles receiving sensor data from MQTT or IoT devices
 func ReceiveSensorDataHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

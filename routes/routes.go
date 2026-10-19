@@ -140,6 +140,7 @@ func SetupRoutes(db *gorm.DB) {
 	rg.POST("/api/sensor-logs", handlers.ReceiveSensorDataHandler)
 	rg.POST("/api/sensor/upload", handlers.HandleArduinoUpload(db))
 	rg.GET("/api/motion-alerts", auth.RequireAuth(handlers.GetMotionAlertsHandler))
+	rg.GET("/api/offline-alerts", auth.RequireAuth(handlers.GetOfflineSensorsHandler))
 }
 
 // handleCoopsGet dispatches GET /api/coops to a single-record or list lookup
