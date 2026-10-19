@@ -25,7 +25,7 @@ func DateKey(t time.Time) string {
 }
 
 // BangkokLocation คืนเขตเวลาไทย (UTC+7) ให้ package อื่นใช้
-// ถูกเรียกจาก: scheduler/cron.go เพื่อให้ cron "06:00 น." เป็นเวลาไทยจริง ไม่ใช่ 06:00 UTC
+// ถูกเรียกจาก: scheduler/cron.go เพื่อให้ cron "18:00 น." เป็นเวลาไทยจริง ไม่ใช่ 18:00 UTC
 func BangkokLocation() *time.Location {
 	return bangkokLoc
 }

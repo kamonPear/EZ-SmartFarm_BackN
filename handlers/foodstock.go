@@ -8,12 +8,16 @@
 //	แยกคิดตามประเภทอาหาร (เม็ดเล็ก / เม็ดใหญ่)
 //
 // การตัดสต็อกเกิดได้ 4 ทาง (ทุกทางใช้สูตรเดียวกัน ComputeDailyFoodConsumptionByCoop):
-//  1. cron 06:00 น. (scheduler/cron.go)          -> RunDailyDeductionForAllUsers
+//  1. cron 18:00 น. (scheduler/cron.go)          -> RunDailyDeductionForAllUsers
 //  2. ตัวปลุกงานจากภายนอก เช่น cron-job.org      -> RunScheduledFoodDeductionHandler
-//  3. ตัดย้อนหลังตอนผู้ใช้เปิดแอป (ถ้าวันนี้ยังไม่ตัด) -> RunCatchUpDeduction
-//  4. ผู้ใช้กดปุ่ม "ตัดสต็อก" เอง                -> ForceDeductStockHandler
+//  3. ตัดตอนผู้ใช้เปิดแอปหลัง 18:00 น. (ถ้าวันนี้ยังไม่ตัด) -> RunCatchUpDeduction
+//  4. ผู้ใช้กดปุ่ม "ตัดสต็อก" เอง (ได้ทุกเวลา)      -> ForceDeductStockHandler
 //
-// ทำไมต้องมีหลายทาง: Render แพลนฟรีพักเซิร์ฟเวอร์เมื่อไม่มีคนใช้ ตอน 06:00 น. cron อาจไม่ได้ทำงาน
+// กฎเวลา: การตัด "อัตโนมัติ" (ทาง 1-3) ทำได้ตั้งแต่ 18:00 น. ของวันนั้นเป็นต้นไปเท่านั้น และวันละครั้ง
+// ก่อน 18:00 น. ไม่มีการตัดอัตโนมัติเลย เช่น เพิ่งกรอกข้อมูลอาหารตอนบ่าย สต็อกจะยังไม่ถูกหักทันที
+// ถ้าวันนั้นกดตัดเองไปแล้ว รอบ 18:00 น. จะข้าม (ถือว่าวันนี้ให้อาหารแล้ว ไม่หักซ้ำ)
+//
+// ทำไมต้องมีหลายทาง: Render แพลนฟรีพักเซิร์ฟเวอร์เมื่อไม่มีคนใช้ ตอน 18:00 น. cron อาจไม่ได้ทำงาน
 //
 // ทุกครั้งที่ตัดสำเร็จ จะบันทึกยอดรายคอกลง food_distribution ด้วย
 // ใช้แสดงสรุปว่าคอกไหนกินไปเท่าไร และใช้เช็กว่า "วันนี้ตัดไปแล้วหรือยัง" (กันตัดซ้ำ)
@@ -333,56 +337,92 @@ func ComputeDailyFoodConsumption(coops []models.Coop, foodType string, rules mod
 	return total
 }
 
+// DailyDeductionHour เวลาตัดสต็อกอาหารอัตโนมัติประจำวัน (ชั่วโมง เวลาไทย) = 18:00 น.
+// ใช้ทั้งตั้ง cron (scheduler/cron.go) และเช็กว่า "ถึงเวลาตัดของวันนี้หรือยัง"
+const DailyDeductionHour = 18
+
+// IsDailyDeductionTime ถึงเวลาตัดสต็อกอัตโนมัติของวันนี้แล้วหรือยัง (18:00 น. เวลาไทยเป็นต้นไป)
+// ก่อนเวลานี้ทุกทางอัตโนมัติจะไม่ตัด กันสต็อกถูกหักทันทีตอนเพิ่งกรอกข้อมูลอาหาร/เปิดแอปตอนกลางวัน
+func IsDailyDeductionTime(now time.Time) bool {
+	return now.In(models.BangkokLocation()).Hour() >= DailyDeductionHour
+}
+
+// deductTodayForUser ตัดสต็อกอาหารประจำวัน "ของวันนี้" ให้ผู้ใช้คนเดียว (ใช้ร่วมกันทุกทางอัตโนมัติ)
+//
+// ทำแยกแต่ละประเภทอาหาร:
+//  1. วันนี้มีบันทึกการตัด (food_distribution) ของประเภทนี้แล้ว -> ข้าม กันตัดซ้ำ
+//     (ตัดไปแล้วจาก cron / ตัวปลุกจากภายนอก / เปิดแอปรอบก่อน / ผู้ใช้กดตัดเอง)
+//  2. คำนวณยอดรายคอก รวมเป็น 0 (ไม่มีคอกกินประเภทนี้ หรือยังไม่ได้ตั้งตารางให้อาหาร) -> ข้าม
+//  3. ตัดสต็อกแบบทั้งหมดหรือไม่ตัดเลย ไม่พอ/ยังไม่มีสต็อก -> ไม่ตัด (ลองใหม่ครั้งถัดไปของวันนี้)
+//  4. ตัดสำเร็จ -> บันทึกยอดรายคอก (ทำให้รอบถัดไปของวันนี้รู้ว่าตัดแล้ว)
+//
+// คืน true ถ้าตัดสำเร็จอย่างน้อย 1 ประเภท  tag ใช้นำหน้า log ให้รู้ว่ามาจากทางไหน
+func deductTodayForUser(userID int, coops []models.Coop, tag string) bool {
+	rules := loadFoodAgeRules(userID)
+	deductedAny := false
+	for _, foodType := range []string{models.FoodTypeSmallPellet, models.FoodTypeLargePellet} {
+		lastDate, found, err := database.GetLatestDistributionDate(userID, foodType)
+		if err != nil {
+			log.Printf("❌ [%s] ตรวจสอบวันตัดสต็อกล่าสุดของ user %d ล้มเหลว: %v\n", tag, userID, err)
+			continue
+		}
+		if found && models.DateKey(lastDate) == models.DateKey(time.Now()) {
+			continue // วันนี้ตัดไปแล้ว
+		}
+
+		items := ComputeDailyFoodConsumptionByCoop(coops, foodType, rules)
+		var amount float64
+		for _, item := range items {
+			amount += item.KgGiven
+		}
+		if amount <= 0 {
+			continue // ไม่มีคอกไหนกำลังกินอาหารประเภทนี้อยู่
+		}
+
+		deducted, shortfall, err := database.DeductFoodstockByType(foodType, userID, amount)
+		if err != nil {
+			log.Printf("❌ [%s] ตัดสต็อก %s ของ user %d ล้มเหลว: %v\n", tag, foodType, userID, err)
+			continue
+		}
+		if shortfall > 0 {
+			// สต็อกไม่พอ (หรือยังไม่มีข้อมูลอาหารเลย) - ไม่ตัดอะไร ไม่มีบันทึกของวันนี้ จึงจะลองใหม่
+			// ในการเรียกถัดไปของวันนี้ (เช่นหลังเติมสต็อก)
+			log.Printf("⚠️ [%s] สต็อก %s ของ user %d ไม่พอ ต้องการ %.2f kg (ขาด %.2f kg) ไม่ได้ตัดสต็อก\n", tag, foodType, userID, amount, shortfall)
+			continue
+		}
+		if _, err := database.CreateFoodDistributionBatch(foodType, items, userID); err != nil {
+			log.Printf("❌ [%s] บันทึก breakdown ของ user %d ล้มเหลว (ตัดสต็อกไปแล้ว): %v\n", tag, userID, err)
+		}
+		log.Printf("✅ [%s] ตัดสต็อก %s %.2f กก. ให้ user %d\n", tag, foodType, deducted, userID)
+		deductedAny = true
+	}
+	return deductedAny
+}
+
 // RunDailyDeductionForAllUsers ตัดสต็อกอาหารประจำวันให้ "ทุกผู้ใช้ในระบบ"
 // คืนค่า: จำนวนผู้ใช้ที่ถูกตัดสต็อกสำเร็จ
 //
 // ขั้นตอน:
-//  1. ดึงคอกทั้งหมดจัดกลุ่มตามผู้ใช้ (GetAllCoopsGroupedByUser) query ครั้งเดียว
-//  2. แต่ละผู้ใช้ แต่ละประเภทอาหาร:
-//     - คำนวณยอดรายคอก แล้วรวม ถ้าเป็น 0 (ไม่มีคอกกินประเภทนี้) ข้าม
-//     - ตัดสต็อก (DeductFoodstockByType แบบทั้งหมดหรือไม่ตัดเลย)
-//     - สต็อกไม่พอ (shortfall > 0) -> ไม่ตัด log เตือน แล้วไปต่อ
-//     - ตัดสำเร็จ -> บันทึกยอดรายคอกลง food_distribution
-//  3. error ของผู้ใช้คนหนึ่งแค่ log แล้ว continue ไม่หยุดทั้งรอบ ผู้ใช้คนอื่นยังได้ตัด
+//  1. ยังไม่ถึง 18:00 น. -> ไม่ทำอะไร (เช่น ตัวปลุกจากภายนอกตั้งเวลาผิด) คืน 0
+//  2. ดึงคอกทั้งหมดจัดกลุ่มตามผู้ใช้ (GetAllCoopsGroupedByUser) query ครั้งเดียว
+//  3. แต่ละผู้ใช้เรียก deductTodayForUser (ข้ามประเภทที่วันนี้ตัดไปแล้ว จึงเรียกซ้ำในวันเดียวได้ไม่หักซ้ำ)
+//     error ของผู้ใช้คนหนึ่งแค่ log แล้วไปต่อ ผู้ใช้คนอื่นยังได้ตัด
 //
-// ต่างจาก RunCatchUpDeduction: ฟังก์ชันนี้ไม่เช็กวันที่ตัดล่าสุด (เรียกวันละครั้งตามเวลาที่ตั้งไว้)
 // ทำไมแยกเป็นฟังก์ชันกลาง: cron และตัวปลุกงานจากภายนอกใช้ร่วมกัน แก้ที่เดียวพอ
 // ถูกเรียกจาก: scheduler/cron.go และ RunScheduledFoodDeductionHandler
 func RunDailyDeductionForAllUsers() (deductedUsers int, err error) {
+	if !IsDailyDeductionTime(time.Now()) {
+		log.Printf("⏳ [Food] ยังไม่ถึงเวลาตัดสต็อกอัตโนมัติ (%02d:00 น.) ข้ามรอบนี้\n", DailyDeductionHour)
+		return 0, nil
+	}
+
 	coopsByUser, err := database.GetAllCoopsGroupedByUser()
 	if err != nil {
 		return 0, err
 	}
 
 	for userID, coops := range coopsByUser {
-		rules := loadFoodAgeRules(userID)
-		userDeducted := false
-		for _, foodType := range []string{models.FoodTypeSmallPellet, models.FoodTypeLargePellet} {
-			items := ComputeDailyFoodConsumptionByCoop(coops, foodType, rules)
-			var amount float64
-			for _, item := range items {
-				amount += item.KgGiven
-			}
-			if amount <= 0 {
-				continue // ไม่มีคอกไหนของผู้ใช้นี้กำลังกินอาหารประเภทนี้อยู่
-			}
-			_, shortfall, err := database.DeductFoodstockByType(foodType, userID, amount)
-			if err != nil {
-				log.Printf("❌ [Food] ตัดสต็อก %s ของผู้ใช้ %d ล้มเหลว: %v\n", foodType, userID, err)
-				continue
-			}
-			if shortfall > 0 {
-				// สต็อกไม่พอสำหรับยอดที่ต้องการเต็มจำนวน - ไม่ตัดอะไรเลย (deducted=0)
-				// ไม่มีอะไรให้บันทึก breakdown
-				log.Printf("⚠️ [Food] สต็อก %s ของผู้ใช้ %d ไม่พอ ต้องการ %.2f kg (ขาด %.2f kg) ไม่ได้ตัดสต็อก\n", foodType, userID, amount, shortfall)
-				continue
-			}
-			if _, err := database.CreateFoodDistributionBatch(foodType, items, userID); err != nil {
-				log.Printf("❌ [Food] บันทึก breakdown ของผู้ใช้ %d ล้มเหลว (ตัดสต็อกไปแล้ว): %v\n", userID, err)
-			}
-			userDeducted = true
-		}
-		if userDeducted {
+		if deductTodayForUser(userID, coops, "Food") {
 			deductedUsers++
 		}
 	}
@@ -395,8 +435,8 @@ func RunDailyDeductionForAllUsers() (deductedUsers int, err error) {
 // ทำไมต้องมี: Render แพลนฟรีพักเซิร์ฟเวอร์ ถ้าทั้งวันไม่มีคนเปิดแอป cron ในตัวและ RunCatchUpDeduction
 // จะไม่ได้ทำงานเลย request จากภายนอกนี้เองที่ปลุกเซิร์ฟเวอร์ขึ้นมา
 // ป้องกันด้วย SCHEDULED_TASK_KEY (auth.RequireScheduledTaskKey) แทน JWT เพราะผู้เรียกไม่ใช่ผู้ใช้
-// ข้อควรระวัง: RunDailyDeductionForAllUsers ไม่ได้เช็กว่าวันนี้ตัดไปแล้วหรือยัง ถ้าเรียกซ้ำในวันเดียวจะตัดซ้ำ
-// จึงต้องตั้งให้เรียกวันละครั้ง ตอบกลับจำนวนผู้ใช้ที่ถูกตัด
+// ต้องตั้งให้เรียกหลัง 18:00 น. (เรียกก่อนเวลาจะไม่ตัดอะไร) เรียกซ้ำในวันเดียวได้ ไม่หักซ้ำ
+// ตอบกลับจำนวนผู้ใช้ที่ถูกตัด
 func RunScheduledFoodDeductionHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -419,64 +459,25 @@ func RunScheduledFoodDeductionHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RunCatchUpDeduction ตัดสต็อก "ย้อนหลัง" ให้ผู้ใช้คนเดียว ถ้าวันนี้ (ตามเวลาไทย) ยังไม่ได้ตัด
+// RunCatchUpDeduction ตัดสต็อกของวันนี้ให้ผู้ใช้คนเดียว ตอนผู้ใช้เปิดแอป ถ้าเลย 18:00 น. แล้วแต่ยังไม่ได้ตัด
 //
-// ทำไมต้องมี: cron 06:00 น. ทำงานได้เฉพาะตอนเซิร์ฟเวอร์ตื่นอยู่ Render แพลนฟรีพักเซิร์ฟเวอร์
-// หลังไม่มีคนใช้ ~15 นาที ถ้าทั้งคืนไม่มีใครเปิดแอป cron จะพลาดโดยไม่มี error ให้เห็น
-// จึงใช้จังหวะที่ผู้ใช้เปิดแอปเป็นจุดสำรอง ตราบใดที่เปิดแอปวันละครั้ง สต็อกจะถูกตัดทุกวัน
+// ทำไมต้องมี: cron 18:00 น. ทำงานได้เฉพาะตอนเซิร์ฟเวอร์ตื่นอยู่ Render แพลนฟรีพักเซิร์ฟเวอร์
+// หลังไม่มีคนใช้ ~15 นาที ถ้าตอน 18:00 น. ไม่มีใครใช้ cron จะพลาดโดยไม่มี error ให้เห็น
+// จึงใช้จังหวะที่ผู้ใช้เปิดแอปหลัง 18:00 น. เป็นจุดสำรอง
 //
-// ขั้นตอน (ทำแยกแต่ละประเภทอาหาร):
-//  1. ดูวันที่ตัดล่าสุดจาก food_distribution (GetLatestDistributionDate)
-//     ถ้าเป็นวันนี้แล้ว = ตัดไปแล้ว ข้าม (กันตัดซ้ำ)
-//  2. คำนวณยอดรายคอก รวมแล้วเป็น 0 ข้าม
-//  3. ตัดสต็อก ถ้าไม่พอ ไม่ตัด (วันนี้ยังไม่มีบันทึก จึงจะลองใหม่ครั้งถัดไป เช่นหลังเติมสต็อก)
-//  4. ตัดสำเร็จ บันทึกยอดรายคอก (ซึ่งทำให้ครั้งต่อไปของวันนี้รู้ว่าตัดแล้ว)
-//
+// ก่อน 18:00 น. ไม่ตัดเลย - เช่นคอกมีไก่แต่เพิ่งกรอกข้อมูลอาหารตอนกลางวัน สต็อกจะไม่ถูกหักทันที
+// ขั้นตอนตัดจริงอยู่ใน deductTodayForUser (ข้ามถ้าวันนี้ตัดไปแล้ว)
 // ถูกเรียกจาก: GetAllFoodstocksHandler (หน้าคลังอาหาร) และ GetAllCoopsHandler ใน coop.go (หน้าหลัก)
 func RunCatchUpDeduction(userID int) {
+	if !IsDailyDeductionTime(time.Now()) {
+		return
+	}
 	coops, err := database.GetAllCoops(userID)
 	if err != nil {
 		log.Printf("❌ [CatchUp] ดึงข้อมูลคอกของ user %d ล้มเหลว: %v\n", userID, err)
 		return
 	}
-
-	rules := loadFoodAgeRules(userID)
-	for _, foodType := range []string{models.FoodTypeSmallPellet, models.FoodTypeLargePellet} {
-		lastDate, found, err := database.GetLatestDistributionDate(userID, foodType)
-		if err != nil {
-			log.Printf("❌ [CatchUp] ตรวจสอบวันตัดสต็อกล่าสุดของ user %d ล้มเหลว: %v\n", userID, err)
-			continue
-		}
-		if found && models.DateKey(lastDate) == models.DateKey(time.Now()) {
-			continue // ตัดไปแล้ววันนี้ (จาก cron หรือเปิดหน้านี้รอบก่อนของวันเดียวกัน)
-		}
-
-		items := ComputeDailyFoodConsumptionByCoop(coops, foodType, rules)
-		var amount float64
-		for _, item := range items {
-			amount += item.KgGiven
-		}
-		if amount <= 0 {
-			continue // ไม่มีคอกไหนกำลังกินอาหารประเภทนี้อยู่
-		}
-
-		deducted, shortfall, err := database.DeductFoodstockByType(foodType, userID, amount)
-		if err != nil {
-			log.Printf("❌ [CatchUp] ตัดสต็อก %s ของ user %d ล้มเหลว: %v\n", foodType, userID, err)
-			continue
-		}
-		if shortfall > 0 {
-			// สต็อกไม่พอสำหรับยอดที่ต้องการเต็มจำนวน - ไม่ตัดอะไรเลย ไม่มีอะไรให้
-			// บันทึก breakdown - ไม่มี distribution ของวันนี้ถูกสร้างขึ้น เลยจะลองตัด
-			// ใหม่อีกครั้งในการเรียกถัดไป (เช่นพรุ่งนี้ หรือหลังเติมสต็อก) โดยอัตโนมัติ
-			log.Printf("⚠️ [CatchUp] สต็อก %s ของ user %d ไม่พอ ต้องการ %.2f kg (ขาด %.2f kg) ไม่ได้ตัดสต็อก\n", foodType, userID, amount, shortfall)
-			continue
-		}
-		if _, err := database.CreateFoodDistributionBatch(foodType, items, userID); err != nil {
-			log.Printf("❌ [CatchUp] บันทึก breakdown ของ user %d ล้มเหลว (ตัดสต็อกไปแล้ว): %v\n", userID, err)
-		}
-		log.Printf("✅ [CatchUp] ตัดสต็อก %s %.2f กก. ให้ user %d แทน Cron ที่พลาดไป\n", foodType, deducted, userID)
-	}
+	deductTodayForUser(userID, coops, "CatchUp")
 }
 
 // ForceDeductStockHandler (POST /api/foodstocks/force-deduct) ผู้ใช้กดตัดสต็อกเอง

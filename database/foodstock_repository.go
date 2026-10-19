@@ -186,7 +186,7 @@ func GetFoodstockQuantity(userID int, foodType string) (quantity float64, found 
 //
 // ทำไมไม่ตัดเท่าที่มี: เดิมเคยตัดบางส่วนจนยอดเหลือ 0 ทั้งที่อาหารจริงยังไม่ได้ถูกใช้ ทำให้ยอดในระบบ
 // ไม่ตรงกับของจริง ผู้ใช้จึงต้องการว่าถ้าไม่พอก็ไม่ตัด รอเติมของก่อน
-// ถูกเรียกจาก: handlers/foodstock.go (ตัดสต็อกอัตโนมัติ 06:00 น. และปุ่ม "ตัดสต็อก") และ handlers/food_distribution.go
+// ถูกเรียกจาก: handlers/foodstock.go (ตัดสต็อกอัตโนมัติ 18:00 น. และปุ่ม "ตัดสต็อก") และ handlers/food_distribution.go
 func DeductFoodstockByType(foodType string, userID int, amount float64) (deducted float64, shortfall float64, err error) {
 	var foodstock models.Foodstock
 
