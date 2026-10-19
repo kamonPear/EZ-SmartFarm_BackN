@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"log"
 	"time"
 
@@ -30,9 +31,11 @@ func CreateImportFood(req *models.CreateImportFoodRequest, userID int) (*models.
 		return nil, err
 	}
 
-	if req.MinQuantity != nil && *req.MinQuantity >= 0 {
-		if _, err := SetFoodMinQuantity(userID, req.FoodType, *req.MinQuantity); err != nil {
-			// the stock itself was already added; failing to save the threshold shouldn't undo that
+	// The threshold is set once and then locked: if it was already set, the value sent
+	// with this import is ignored. The stock itself was already added, so failing to save
+	// the threshold shouldn't undo that.
+	if req.MinQuantity != nil && *req.MinQuantity > 0 {
+		if err := SetFoodMinQuantity(userID, *req.MinQuantity); err != nil && !errors.Is(err, ErrMinQuantityLocked) {
 			log.Printf("Warning: could not save min quantity after import: %v", err)
 		}
 	}
@@ -61,6 +64,7 @@ func addToFoodstock(foodType string, userID int, amount float64) error {
 		FoodType:        foodType,
 		QuantityCurrent: amount,
 		DateUp:          time.Now(),
+		MinQuantity:     getSharedMinQuantity(userID),
 	}
 	return DB.Create(&foodstock).Error
 }
