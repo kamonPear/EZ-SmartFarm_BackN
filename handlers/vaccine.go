@@ -22,6 +22,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -70,6 +71,19 @@ func CreateVaccineHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[%s] %s - %d (Coop not found: %v)", r.Method, r.RequestURI, http.StatusNotFound, err)
 		http.Error(w, "Coop not found", http.StatusNotFound)
 		return
+	}
+
+	// วัคซีนที่อยู่ในตารางวัคซีนของฟาร์ม ต้องตรวจสุขภาพคอกก่อนถึงจะบันทึกว่าให้แล้วได้ (เหมือนปุ่ม "เสร็จสิ้น")
+	var schedule models.Vaccine
+	if err := database.DB.Where("name_vaccine = ? AND user_id = ?", req.Name, userID).First(&schedule).Error; err == nil {
+		dueDate := coop.Birthday.AddDate(0, 0, schedule.MinAgeDays)
+		if models.DateKey(dueDate) < models.DateKey(coop.DateAdoptAnimals) {
+			dueDate = coop.DateAdoptAnimals
+		}
+		if msg := healthCheckMissingMessage(coop.CoopID, dueDate); msg != "" {
+			http.Error(w, msg, http.StatusBadRequest)
+			return
+		}
 	}
 
 	vaccine, err := database.CreateVaccine(&req, coop)
@@ -791,6 +805,11 @@ func GetVaccineCalendarAlertsHandler(w http.ResponseWriter, r *http.Request) {
 						http.Error(w, "ยังไม่ถึงวันครบกำหนดให้วัคซีนนี้ กดสำเร็จก่อนไม่ได้", http.StatusBadRequest)
 						return
 					}
+					// ต้องตรวจสุขภาพก่อนให้วัคซีน (รู้ก่อนว่าไก่ดี/ป่วยกี่ตัว)
+					if msg := healthCheckMissingMessage(coopID, dueDate); msg != "" {
+						http.Error(w, msg, http.StatusBadRequest)
+						return
+					}
 				}
 
 				// Birthday ต้องเป็นวันเกิดไก่จริงของคอกนี้ (เหมือนที่ CreateVaccine
@@ -1138,4 +1157,33 @@ func UpdateCustomMedicineHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"message": "อัปเดตข้อมูลวัคซีนสำเร็จ",
 	})
+}
+
+// healthCheckMissingMessage เช็กว่าคอกนี้ตรวจสุขภาพแล้วหรือยัง ก่อนบันทึกว่าให้วัคซีนที่ครบกำหนดวันที่ dueDate
+//
+// กฎ: ต้องมีผลตรวจสุขภาพของคอกนี้ตั้งแต่ "วันนัดตรวจ" เป็นต้นไป (วันนัด = 1 วันก่อนวันครบกำหนดวัคซีน
+// เหมือนหน้านัดตรวจสุขภาพ) ผลตรวจที่เก่ากว่านั้นไม่นับ เพราะไม่ได้บอกสภาพไก่ตอนจะให้วัคซีน
+// ถ้าเลยวันนัดไปแล้ว ตรวจวันนี้ก็ผ่าน
+//
+// คืน "" = ตรวจแล้ว ให้บันทึกต่อได้ / ไม่ว่าง = ข้อความบอกผู้ใช้ (ยังไม่ได้ตรวจ)
+// ถูกเรียกจาก: GetVaccineCalendarAlertsHandler (PUT กด "เสร็จสิ้น") และ CreateVaccineHandler
+func healthCheckMissingMessage(coopID int, dueDate time.Time) string {
+	loc := models.BangkokLocation()
+	due := dueDate.In(loc)
+	appointment := time.Date(due.Year(), due.Month(), due.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, -1)
+
+	var count int64
+	if err := database.DB.Model(&models.Health{}).
+		Where("coop_id = ? AND date >= ?", coopID, appointment).
+		Count(&count).Error; err != nil {
+		log.Printf("ตรวจสอบผลตรวจสุขภาพก่อนให้วัคซีนไม่สำเร็จ (coop %d): %v", coopID, err)
+		return "ตรวจสอบผลตรวจสุขภาพไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"
+	}
+	if count > 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"ยังไม่ได้ตรวจสุขภาพคอกนี้ก่อนให้วัคซีน (นัดตรวจวันที่ %d/%d/%d) กรุณาบันทึกผลตรวจสุขภาพก่อน ว่าไก่ดีกี่ตัว ป่วยกี่ตัว แล้วจึงบันทึกการให้วัคซีน",
+		appointment.Day(), int(appointment.Month()), appointment.Year()+543,
+	)
 }
