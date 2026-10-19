@@ -1,3 +1,13 @@
+// =====================================================================================
+// ไฟล์ database/device_repository.go - อุปกรณ์ที่ติดตั้งในคอก (ตาราง device)
+// =====================================================================================
+//
+// อุปกรณ์ 1 ตัว = 1 แถว ผูกกับคอก (coop_id) มีชื่อ, ไอคอน, ประเภท (Sensor/Actuator),
+// สถานะ (Online/Offline), ตำแหน่งบนผังคอก (pos_x, pos_y) และ "เลขอุปกรณ์ในคอก" (slot_index)
+//
+// เลขอุปกรณ์ (slot_index) เริ่มที่ 1 ในแต่ละคอก และไม่เปลี่ยนแม้บันทึกผังใหม่
+// บอร์ด ESP32 ใช้เลขนี้บอกว่าค่าที่ส่งมาเป็นของอุปกรณ์ตัวไหน (ส่งเลขให้บอร์ดผ่าน MQTT: services/slot_publisher.go)
+// ถูกเรียกจาก: handlers/device.go และ handlers/sensor_log.go
 package database
 
 import (
@@ -8,12 +18,22 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// SaveCoopLayout บันทึกผังอุปกรณ์ของคอก (ต้องเป็นคอกของ userID) แบบ "ซิงก์":
-//   - อุปกรณ์ที่หน้าเว็บส่ง slot_index (เลขที่ backend เคยออกให้) มาด้วย = ตัวเดิม คงเลขเดิมและประวัติค่าเซนเซอร์ไว้
-//     แล้วอัปเดตแค่ชื่อ/ไอคอน/ตำแหน่ง
-//   - อุปกรณ์ที่ไม่ส่งเลขมา = ตัวใหม่ ได้เลขถัดไปของคอกนี้ (เริ่ม 1 ต่อคอก วิ่งขึ้นไม่ซ้ำ)
-//   - อุปกรณ์เดิมที่หายไปจากรายการ = ถูกเอาออก (ลบพร้อมประวัติค่าเซนเซอร์ของมัน)
-// slot.ID (เลขช่องกริดบนหน้าเว็บ) ไม่ถูกเก็บแล้ว ตำแหน่งจริงเก็บที่ pos_x/pos_y
+// SaveCoopLayout บันทึกผังอุปกรณ์ทั้งคอก (ปุ่ม "บันทึกการจัดวาง" ในหน้าจัดวางระบบเซนเซอร์บนเว็บ)
+// ทำงานแบบ "ซิงก์" ให้ DB ตรงกับรายการที่หน้าเว็บส่งมา:
+//   - อุปกรณ์ที่ส่งเลขเดิม (slot_index) มา = ตัวเดิม -> อัปเดตชื่อ/ไอคอน/ตำแหน่ง คงเลขและประวัติค่าไว้
+//   - อุปกรณ์ที่ไม่มีเลข = ตัวใหม่ -> ออกเลขถัดไปของคอก (next_device_no)
+//   - อุปกรณ์เดิมที่ไม่อยู่ในรายการ = ถูกเอาออก -> ลบพร้อมประวัติค่าเซนเซอร์
+//
+// รายละเอียด:
+//  1. เช็กว่าคอกเป็นของผู้ใช้
+//  2. เปิด Transaction และล็อกแถวคอก (SELECT ... FOR UPDATE)
+//     กันกรณีกดบันทึกพร้อมกัน 2 ครั้งแล้วได้เลขอุปกรณ์ซ้ำ
+//  3. ทำ map เลข -> อุปกรณ์เดิม และหาเลขถัดไปที่ยังไม่ถูกใช้
+//  4. วนทุกช่องที่ส่งมา: ชื่อ "พัดลม" หรือ "หลอดไฟ" = Actuator (อุปกรณ์สั่งงาน) นอกนั้น = Sensor
+//  5. ลบอุปกรณ์เดิมที่หายไป (ลบค่าใน sensor_log ก่อน เพราะเป็น Foreign Key)
+//  6. บันทึกเลขถัดไปกลับลงคอก
+//
+// ถูกเรียกจาก: handlers/device.go (POST /api/coops/layout)
 func SaveCoopLayout(coopID int, slots []models.SlotPayload, userID int) error {
 	owned, err := CoopBelongsToUser(coopID, userID)
 	if err != nil {
@@ -115,14 +135,15 @@ func SaveCoopLayout(coopID int, slots []models.SlotPayload, userID int) error {
 	})
 }
 
-// GetAllDevices retrieves every device belonging to any of userID's coops
+// GetAllDevices ดึงอุปกรณ์ทุกตัวในทุกคอกของผู้ใช้ (หน้า "สถานะการทำงานของอุปกรณ์" / "อุปกรณ์รวม")
+// ถูกเรียกจาก: handlers/device.go
 func GetAllDevices(userID int) ([]models.Device, error) {
 	var devices []models.Device
 	err := DB.Where("coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", userID).Find(&devices).Error
 	return devices, err
 }
 
-// GetDeviceByID retrieves a device by ID, only if its coop belongs to userID
+// GetDeviceByID ดึงอุปกรณ์ตัวเดียวตาม id เฉพาะในคอกของผู้ใช้ ไม่เจอคืน ErrNotFound
 func GetDeviceByID(id int, userID int) (*models.Device, error) {
 	var device models.Device
 	err := DB.Where("device_id = ? AND coop_id IN (SELECT coop_id FROM coop WHERE user_id = ?)", id, userID).First(&device).Error
@@ -135,7 +156,8 @@ func GetDeviceByID(id int, userID int) (*models.Device, error) {
 	return &device, nil
 }
 
-// GetDevicesByCoopID retrieves every device for coopID, only if it belongs to userID
+// GetDevicesByCoopID ดึงอุปกรณ์ทั้งหมดในคอกเดียว หลังเช็กว่าคอกเป็นของผู้ใช้
+// ใช้ในหน้าสถานะอุปกรณ์รายคอก และหน้าจัดวางเซนเซอร์ (โหลดผังเดิมมาแสดง)
 func GetDevicesByCoopID(coopID int, userID int) ([]models.Device, error) {
 	owned, err := CoopBelongsToUser(coopID, userID)
 	if err != nil {
@@ -150,7 +172,10 @@ func GetDevicesByCoopID(coopID int, userID int) ([]models.Device, error) {
 	return devices, err
 }
 
-// CreateDevice creates a new device, only if device.CoopID belongs to userID
+// CreateDevice เพิ่มอุปกรณ์ทีละตัว (เช็กว่าคอกเป็นของผู้ใช้ก่อน)
+// ตั้งสถานะเริ่มต้นเป็น Offline จนกว่าบอร์ดจะส่งข้อมูลมาครั้งแรก
+// หลังบันทึก ดันตัวนับ next_device_no ของคอกให้ไม่ต่ำกว่าเลขที่เพิ่งใช้
+// (GREATEST = เลือกค่าที่มากกว่า) กันการบันทึกผังครั้งถัดไปออกเลขซ้ำ
 func CreateDevice(device *models.Device, userID int) error {
 	owned, err := CoopBelongsToUser(int(device.CoopID), userID)
 	if err != nil {
@@ -171,7 +196,9 @@ func CreateDevice(device *models.Device, userID int) error {
 	return DB.Exec("UPDATE coop SET next_device_no = GREATEST(next_device_no, ?) WHERE coop_id = ?", device.SlotIndex+1, device.CoopID).Error
 }
 
-// UpdateDevice updates an existing device, only if it (and any target coop) belongs to userID
+// UpdateDevice แก้ไขข้อมูลอุปกรณ์ (เช็กว่าอุปกรณ์เป็นของผู้ใช้)
+// ถ้าย้ายอุปกรณ์ไปคอกอื่น คอกปลายทางต้องเป็นของผู้ใช้ด้วย
+// Updates(device) ของ GORM อัปเดตเฉพาะช่องที่ไม่ใช่ค่าศูนย์
 func UpdateDevice(device *models.Device, userID int) error {
 	existing, err := GetDeviceByID(int(device.DeviceID), userID)
 	if err != nil {
@@ -193,7 +220,7 @@ func UpdateDevice(device *models.Device, userID int) error {
 	return DB.Model(device).Updates(device).Error
 }
 
-// DeleteDevice deletes a device by ID, only if its coop belongs to userID
+// DeleteDevice ลบอุปกรณ์ตาม id (เช็กสิทธิ์ผ่าน GetDeviceByID)
 func DeleteDevice(id int, userID int) error {
 	device, err := GetDeviceByID(id, userID)
 	if err != nil {
@@ -202,7 +229,7 @@ func DeleteDevice(id int, userID int) error {
 	return DB.Delete(device).Error
 }
 
-// DeleteDeviceBySlot deletes the device at (coopID, slotIndex), only if coopID belongs to userID
+// DeleteDeviceBySlot ลบอุปกรณ์ตามตำแหน่ง (คอก + เลขอุปกรณ์) หลังเช็กว่าคอกเป็นของผู้ใช้
 func DeleteDeviceBySlot(coopID, slotIndex int, userID int) error {
 	owned, err := CoopBelongsToUser(coopID, userID)
 	if err != nil {

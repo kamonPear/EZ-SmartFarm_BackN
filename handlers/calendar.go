@@ -1,3 +1,13 @@
+// =====================================================================================
+// ไฟล์ handlers/calendar.go - API จุดแสดงเหตุการณ์บนปฏิทิน (หน้าปฏิทินของทั้งแอปและเว็บ)
+// =====================================================================================
+//
+// ปฏิทินแสดงเหตุการณ์ 5 แบบในแต่ละวัน:
+//
+//	วัคซีน (ถึงกำหนด/ให้แล้ว/เกินกำหนด), ตรวจสุขภาพ, วันเกิดไก่, วันรับเข้าเลี้ยง, นัดตรวจที่ตั้งเอง
+//
+// เดิมแอปและเว็บต่างดึง 3-4 API แล้วคำนวณเอง ทำให้ผลไม่ตรงกัน
+// จึงย้ายมาคำนวณที่ backend ที่เดียว ทั้งสองฝั่งได้ผลเหมือนกันแน่นอน
 package handlers
 
 import (
@@ -13,13 +23,13 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// DayMarkerDetail is one line item within a day - structured (not a pre-joined
-// string) so each client can render its own icon/color/tap-target per item instead
-// of just dumping prose. Category/Status use the same small fixed vocabularies on
-// both clients:
+// DayMarkerDetail เหตุการณ์ 1 รายการในวันนั้น
+//   - Text     : ข้อความที่แสดง เช่น "วัคซีนนิวคาสเซิล – คอก A (ถึงกำหนด)"
+//   - Category : vaccine | health | birthday | adopt | appointment (ใช้เลือกไอคอน/สี)
+//   - Status   : done | upcoming | overdue | info
+//   - CoopID   : คอกที่เกี่ยวข้อง (กดแล้วไปหน้าคอกนั้นได้)
 //
-//	category: "vaccine" | "health" | "birthday" | "adopt" | "appointment"
-//	status:   "done" | "upcoming" | "overdue" | "info"
+// ส่งเป็นโครงสร้าง ไม่ใช่ข้อความรวมก้อนเดียว เพื่อให้แต่ละฝั่งแสดงไอคอน/สีเองได้
 type DayMarkerDetail struct {
 	Text     string `json:"text"`
 	Category string `json:"category"`
@@ -27,10 +37,10 @@ type DayMarkerDetail struct {
 	CoopID   int    `json:"coop_id"`
 }
 
-// DayMarker is what each date key in the /api/calendar/markers response maps to.
-// Field names are snake_case (backend convention) - the Angular/Flutter clients map
-// them onto their own camelCase DayMarker types, same shape the web app used to
-// compute itself client-side from 3 separate requests.
+// DayMarker สรุปของ 1 วัน (key เป็น "YYYY-MM-DD")
+//   - VaccineStatus : "due" = มีวัคซีนที่ยังไม่ให้, "done" = ให้ครบแล้ว, ไม่มี field = ไม่มีวัคซีนวันนั้น
+//   - HasHealth / HasCoopInfo / HasHealthAppointment : มีเหตุการณ์ประเภทนั้นไหม (ใช้วาดจุดสี)
+//   - Details : รายการเหตุการณ์ทั้งหมดของวันนั้น
 type DayMarker struct {
 	// "due" if any vaccine for that date isn't completed yet (or is overdue);
 	// "done" if every vaccine alert on that date has been completed. Omitted
@@ -42,12 +52,24 @@ type DayMarker struct {
 	Details              []DayMarkerDetail `json:"details"`
 }
 
-// GetCalendarMarkersHandler is the single source of truth for "what's happening on
-// each day" across the whole app - vaccine due/overdue/completed, health checks,
-// coop birthdays/adoption dates, and manual health appointments, all merged into one
-// map keyed by "YYYY-MM-DD". Both the web app and the Flutter app call this instead
-// of each re-deriving the same thing from 3-4 separate endpoints themselves.
-// GET /api/calendar/markers?coop_id=5 (coop_id optional - omit for the whole farm)
+// GetCalendarMarkersHandler (GET /api/calendar/markers?coop_id=5) สร้างข้อมูลปฏิทินทั้งหมด
+// ไม่ใส่ coop_id = ทั้งฟาร์ม ผลลัพธ์เป็น map วันที่ -> DayMarker
+//
+// ขั้นตอน:
+//  1. ดึงคอกทั้งหมดของผู้ใช้ (ถ้ากรองคอก เหลือคอกเดียว)
+//  2. วัคซีน: วนทุกคอก x ทุกประเภทวัคซีน
+//     - วันกำหนด = วันเกิดไก่ + อายุขั้นต่ำที่ต้องให้ (MinAgeDays)
+//     - ถ้าช่วงให้วัคซีนจบก่อนวันรับเข้าเลี้ยง = ฟาร์มอื่นให้ไปแล้ว ข้าม
+//     - ถ้าวันกำหนดอยู่ก่อนวันรับเข้าเลี้ยง เลื่อนเป็นวันรับเข้าเลี้ยง
+//     - เช็กประวัติวัคซีนว่าให้แล้วหรือยัง (completedMap key = "coopID_ชื่อวัคซีน")
+//     ยังไม่ให้และเลยวันแล้ว = เกินกำหนด (overdue)
+//     ใช้สูตรเดียวกับ GetVaccineCalendarAlertsHandler ใน vaccine.go
+//  3. ผลตรวจสุขภาพ: ใส่จุดในวันที่ตรวจ
+//  4. วันเกิดไก่ และวันรับเข้าเลี้ยงของแต่ละคอก
+//  5. นัดตรวจสุขภาพที่ผู้ใช้ตั้งเอง
+//
+// getOrCreate = ถ้าวันนั้นยังไม่มีใน map ก็สร้างใหม่ ทำให้รวมเหตุการณ์หลายแบบในวันเดียวได้
+// เปรียบเทียบวันด้วย models.DateKey (ข้อความ YYYY-MM-DD) เพื่อไม่ให้เวลา/เขตเวลามีผล
 func GetCalendarMarkersHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)

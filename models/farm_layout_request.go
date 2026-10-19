@@ -1,21 +1,23 @@
+// =====================================================================================
+// ไฟล์ models/farm_layout_request.go - รูปแบบ JSON ของหน้าจัดวางผังฟาร์ม
+// =====================================================================================
 package models
 
-// UpdateFarmLayoutRequest represents the request payload for changing the farm's chosen shape
+// UpdateFarmLayoutRequest body ของ PUT /api/farm-layout เช่น {"shape": "circle"}
 type UpdateFarmLayoutRequest struct {
 	Shape string `json:"shape" binding:"required"`
 }
 
-// CoopPositionEntry represents one coop's position on the farm layout canvas.
-// PosX/PosY are nil to unplace a coop (send it back to the "not yet placed" tray).
+// CoopPositionEntry ตำแหน่งของ 1 คอกบนผัง (เปอร์เซ็นต์)
+// PosX/PosY = nil คือเอาคอกออกจากผัง กลับไปอยู่ในถาด "ยังไม่ได้วาง"
 type CoopPositionEntry struct {
 	CoopID int      `json:"coop_id"`
 	PosX   *float64 `json:"pos_x"`
 	PosY   *float64 `json:"pos_y"`
 }
 
-// UpdateCoopPositionsRequest represents the request payload for saving every coop's
-// position on the farm layout canvas in one batch (mirrors how the device layout page
-// saves all 21 slots at once).
+// UpdateCoopPositionsRequest body ของ PUT /api/coops/positions = ตำแหน่งทุกคอกในครั้งเดียว
+// (เหมือนหน้าจัดวางอุปกรณ์ที่บันทึกทุกช่องพร้อมกัน)
 type UpdateCoopPositionsRequest struct {
 	Positions []CoopPositionEntry `json:"positions"`
 }

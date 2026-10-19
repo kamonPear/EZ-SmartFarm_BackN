@@ -1,3 +1,6 @@
+// =====================================================================================
+// ไฟล์ handlers/sensor_log.go - API เกี่ยวกับค่าเซนเซอร์ และการแจ้งเตือนการเคลื่อนไหว
+// =====================================================================================
 package handlers
 
 import (
@@ -12,8 +15,8 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// สร้าง Struct จำลองข้อมูลที่จะส่งไปให้ Angular
-// (สังเกตว่าเราใช้ `status` ตัวเล็ก เพื่อให้ Angular ที่เขียนดักไว้จับคู่ได้ทันที)
+// DeviceResponse รูปแบบข้อมูลอุปกรณ์ที่ส่งให้หน้าเว็บ Angular (ใช้ใน GetCoopDataHandler)
+// ใช้ชื่อ field "status" ตัวเล็ก ให้ตรงกับที่หน้าเว็บรออ่าน
 type DeviceResponse struct {
 	DeviceID  int    `json:"device_id"`
 	SlotIndex int    `json:"slot_index"`
@@ -22,9 +25,9 @@ type DeviceResponse struct {
 	Status    string `json:"status"`
 }
 
-// GetMotionAlertsHandler returns the caller's motion-detection events (PIR sensors
-// at coop door frames) from the last 24 hours, newest first.
-// GET /api/motion-alerts
+// GetMotionAlertsHandler (GET /api/motion-alerts) ส่งการตรวจจับการเคลื่อนไหว
+// จากเซนเซอร์ PIR (ติดที่ประตูคอก) ในช่วง 24 ชั่วโมงที่ผ่านมา เรียงจากล่าสุด
+// ใช้แจ้งเตือนว่ามีคน/สัตว์เข้าคอก ข้อมูลจาก database.GetMotionAlertsForUser (เฉพาะคอกของผู้ใช้)
 func GetMotionAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -49,7 +52,9 @@ func GetMotionAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rows)
 }
 
-// ReceiveSensorDataHandler handles receiving sensor data from MQTT or IoT devices
+// ReceiveSensorDataHandler (POST /api/sensor-logs) รับค่าเซนเซอร์ผ่าน HTTP แล้วบันทึกเป็นแถวใหม่
+// เป็นช่องทางสำรอง/ทดสอบ ช่องทางหลักคือ MQTT (services/sensor_log.go)
+// ไม่ต้องล็อกอิน เพราะบอร์ดไม่มี JWT ตอบ 201 พร้อม log_id ของแถวที่บันทึก
 func ReceiveSensorDataHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -78,6 +83,10 @@ func ReceiveSensorDataHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetCoopDataHandler ส่งรายการอุปกรณ์ของคอก (?id=) พร้อมสถานะ Online/Offline
+// ถ้าอุปกรณ์ไม่อัปเดตเกิน 5 นาที จะบังคับเป็น "offline" ตอนตอบกลับ
+// หมายเหตุ: ฟังก์ชันนี้ "ไม่ได้ลงทะเบียน" ใน routes/routes.go แล้ว (เป็นโค้ดรุ่นเก่า)
+// หน้าเว็บปัจจุบันใช้ GET /api/devices แทน และสถานะ Offline ถูกตั้งโดย services.StartOfflineChecker
 func GetCoopDataHandler(w http.ResponseWriter, r *http.Request) {
 	// 1. รับค่า coop id จาก URL แล้วแปลงเป็นตัวเลข (int)
 	coopIDStr := r.URL.Query().Get("id")
@@ -111,10 +120,10 @@ func GetCoopDataHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		responseDevices = append(responseDevices, DeviceResponse{
-		
-			Name:      dbDevice.Name,
-			Icon:      dbDevice.Icon,
-			Status:    finalStatus,
+
+			Name:   dbDevice.Name,
+			Icon:   dbDevice.Icon,
+			Status: finalStatus,
 		})
 	}
 

@@ -1,3 +1,16 @@
+// =====================================================================================
+// ไฟล์ services/mqtt_service.go - เชื่อมต่อ MQTT broker เพื่อรับค่าจากบอร์ด ESP32 และตรวจสถานะ Offline
+// =====================================================================================
+//
+// MQTT คืออะไร: โปรโตคอลส่งข้อความแบบ publish/subscribe ที่เบามาก เหมาะกับอุปกรณ์ IoT
+//  - บอร์ด ESP32 ในคอก "publish" ค่าเซนเซอร์ไปที่ topic farm/sensors/data
+//  - backend ตัวนี้ "subscribe" topic นั้น เมื่อมีข้อความเข้ามาจะบันทึกลงฐานข้อมูล
+//  - backend ยัง publish ค่าตั้งค่ากลับไปหาบอร์ดด้วย (เลขช่องอุปกรณ์, ค่ามาตรฐานอุณหภูมิ/แอมโมเนีย)
+//  ตัวกลางที่รับส่งข้อความ (broker) แยกเป็นเซิร์ฟเวอร์ต่างหาก (ตั้งค่าผ่าน MQTT_BROKER_HOST ฯลฯ)
+//
+// ทำไมใช้ MQTT ไม่ให้บอร์ดยิง HTTP ตรง: เชื่อมต่อค้างไว้ได้ ส่งถี่ได้โดยไม่เปลืองแรง
+// และสื่อสารได้สองทาง (backend ส่งค่ากลับไปหาบอร์ดได้)
+// ถูกเรียกจาก: main.go (go services.StartMQTTWorker() และ go services.StartOfflineChecker())
 package services
 
 import (
@@ -12,7 +25,12 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-// โครงสร้างข้อมูลที่รับมาจาก Arduino
+// SensorPayload รูปแบบ JSON ที่บอร์ด ESP32 ส่งมาใน topic farm/sensors/data
+// เช่น {"coop_id":1, "slot_index":4, "device_name":"DHT22", "value":31.5}
+//  - CoopID     : คอกที่บอร์ดติดตั้งอยู่
+//  - SlotIndex  : เลขอุปกรณ์ในคอก ใช้หาว่าค่านี้เป็นของอุปกรณ์ตัวไหน (ไม่ใช้ชื่อ เพราะชื่อซ้ำกันได้)
+//  - DeviceName : ไว้ดูใน log เท่านั้น
+//  - Value      : ค่าที่วัดได้ (เซนเซอร์) หรือสถานะ 1/0 (พัดลม/หลอดไฟ)
 type SensorPayload struct {
 	CoopID     int     `json:"coop_id"`
 	SlotIndex  int     `json:"slot_index"`  // ตำแหน่งช่องที่วางอุปกรณ์ไว้ (ใช้จับคู่อุปกรณ์แทนชื่อ เพราะชื่อซ้ำกันได้)
@@ -20,9 +38,22 @@ type SensorPayload struct {
 	Value      float64 `json:"value"`
 }
 
-// mqttClient คือ client ตัวเดียวกับที่ StartMQTTWorker สร้าง ใช้ publish กลับไปหาอุปกรณ์
+// mqttClient ตัวเชื่อมต่อ MQTT ตัวเดียวของทั้งโปรแกรม สร้างใน StartMQTTWorker
+// เก็บเป็นตัวแปรระดับ package เพื่อให้ slot_publisher.go และ threshold_publisher.go ใช้ publish กลับไปหาบอร์ดได้
 var mqttClient mqtt.Client
 
+// StartMQTTWorker ตั้งค่าและเชื่อมต่อ MQTT broker (รันเป็น goroutine จาก main.go)
+//
+// ขั้นตอน:
+//  1. อ่านค่าการเชื่อมต่อจาก environment (host, port, user, password, ใช้ TLS ไหม)
+//     ถ้าไม่ได้ตั้ง ใช้ค่าเริ่มต้น เหมาะกับการทดสอบในเครือข่ายบ้าน
+//  2. ตั้ง client ID (ปรับได้ด้วย MQTT_CLIENT_ID) เพราะ broker ให้ ID เดียวกันต่อได้ทีละ 1 การเชื่อมต่อ
+//  3. ตั้ง callback ไว้ 3 ตัว:
+//     - เมื่อมีข้อความเข้า : แปลง JSON เป็น SensorPayload แล้วส่งให้ ProcessAndSaveSensorLog บันทึก
+//     - เมื่อเชื่อมต่อสำเร็จ : subscribe farm/sensors/data แล้วส่งค่ามาตรฐานและเลขช่องให้ทุกคอกใหม่
+//       (ทำใน goroutine เพราะห้ามรอผลภายใน callback ของไลบรารี paho)
+//     - เมื่อหลุด : แค่ log เพราะเปิด AutoReconnect ไว้ ไลบรารีจะต่อใหม่ให้เอง
+//  4. เชื่อมต่อ ถ้าล้มก็ log แล้วจบ (เซิร์ฟเวอร์ส่วนอื่นยังทำงานต่อได้)
 func StartMQTTWorker() {
 	brokerHost := getEnv("MQTT_BROKER_HOST", "192.168.0.102")
 	brokerPort := getEnv("MQTT_BROKER_PORT", "1883")
@@ -88,6 +119,8 @@ func StartMQTTWorker() {
 	}
 }
 
+// getEnv อ่านค่า environment variable ถ้าไม่ได้ตั้งไว้ (ค่าว่าง) ให้ใช้ defaultValue แทน
+// ถูกเรียกจาก: StartMQTTWorker
 func getEnv(key, defaultValue string) string {
 	value := os.Getenv(key)
 	if value == "" {
@@ -96,11 +129,19 @@ func getEnv(key, defaultValue string) string {
 	return value
 }
 
-// offlineAfterSeconds คือเวลาที่ไม่ได้รับข้อมูลจากอุปกรณ์ก่อนจะถือว่า Offline
-// ถ้ายังส่งข้อมูลมาเรื่อยๆ จะเป็น Online (ตั้งใน sensor_log.go ทุกครั้งที่รับข้อความ)
-// แต่ถ้าเงียบเกิน 30 วินาทีจะเป็น Offline แล้วกลับเป็น Online ทันทีเมื่อมีข้อมูลเข้ามาอีก
+// offlineAfterSeconds ถ้าอุปกรณ์เงียบ (ไม่ส่งข้อมูลมา) นานเกิน 30 วินาที จะถือว่า Offline
+// บอร์ดส่งข้อมูลทุกไม่กี่วินาที 30 วินาทีจึงเผื่อเน็ตสะดุดได้โดยไม่ตีเป็น Offline เร็วเกินไป
+// พอมีข้อมูลเข้ามาใหม่ จะกลับเป็น Online ทันที (ใน sensor_log.go)
 const offlineAfterSeconds = 30
 
+// StartOfflineChecker วนตรวจทุก 5 วินาที ว่ามีอุปกรณ์ไหนเงียบเกิน offlineAfterSeconds
+// ถ้ามี ตั้งสถานะเป็น Offline (หน้าสถานะอุปกรณ์จะแสดงสีแดง/ออฟไลน์)
+//
+// ทำไมคำนวณเวลาตัด (cutoff) ฝั่ง Go แทน NOW() ของ MySQL:
+// last_update ถูกเขียนด้วยเวลาของ Go ถ้าเครื่อง backend (เช่น Render ใช้ UTC) กับ MySQL (เวลาไทย)
+// คนละ timezone เวลาจะเหลื่อมกันหลายชั่วโมง ทำให้อุปกรณ์ไม่เคยถูกตีเป็น Offline
+// ก่อนอัปเดต จะ log รายชื่ออุปกรณ์ที่ถูกตีเป็น Offline ไว้ไล่หาสาเหตุ
+// ถูกเรียกจาก: main.go (go services.StartOfflineChecker() รันตลอดอายุโปรแกรม)
 func StartOfflineChecker() {
 	for {
 		time.Sleep(5 * time.Second)

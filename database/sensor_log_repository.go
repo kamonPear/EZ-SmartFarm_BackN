@@ -1,3 +1,10 @@
+// =====================================================================================
+// ไฟล์ database/sensor_log_repository.go - ค่าที่วัดได้จากเซนเซอร์ และการแจ้งเตือนความเคลื่อนไหว
+// =====================================================================================
+//
+// บอร์ด ESP32 ในคอกส่งค่าที่วัดได้มาเป็นระยะ (อุณหภูมิ, แอมโมเนีย, PIR ตรวจจับการเคลื่อนไหว)
+// ค่าเก็บในตาราง sensor_log และสถานะอุปกรณ์ (Online/Offline) อยู่ในตาราง device
+// ถูกเรียกจาก: handlers/sensor_log.go และ services/ (MQTT)
 package database
 
 import (
@@ -11,11 +18,19 @@ import (
 // 🌟 ฟังก์ชัน CRUD สำหรับบันทึกข้อมูลเซนเซอร์ (Sensor Log)
 // ==========================================
 
-// CreateSensorLog บันทึกค่าเซนเซอร์ใหม่ และอัปเดตสถานะอุปกรณ์ (Device) ในเวลาเดียวกัน
+// CreateSensorLog บันทึกค่าเซนเซอร์ใหม่ และอัปเดตสถานะอุปกรณ์เป็น Online พร้อมกัน
+//
+// ใช้ Transaction (DB.Transaction): 2 คำสั่งด้านในต้องสำเร็จทั้งคู่ ถ้าตัวใดล้ม จะยกเลิกทั้งหมด (rollback)
+// กันข้อมูลครึ่ง ๆ กลาง ๆ เช่น มีค่าเซนเซอร์แต่สถานะอุปกรณ์ไม่อัปเดต
+//  1. insert ค่าลงตาราง sensor_log
+//  2. อัปเดต device: current_status = "Online", last_update = ตอนนี้
+//     (services/ มีตัวเช็กออฟไลน์ ที่จะเปลี่ยนเป็น Offline ถ้าไม่ได้ข้อมูลนานเกินกำหนด)
+//
+// ถูกเรียกจาก: handlers/sensor_log.go -> ReceiveSensorDataHandler (POST /api/sensor-logs)
 func CreateSensorLog(log *models.SensorLog) error {
 	// ใช้ Transaction ป้องกันข้อมูลพัง ถ้าอัปเดตตัวใดตัวหนึ่งไม่ผ่าน ระบบจะยกเลิกทั้งหมด
 	return DB.Transaction(func(tx *gorm.DB) error {
-		
+
 		// 1. บันทึกประวัติเซนเซอร์ลงตาราง sensor_log
 		if err := tx.Create(log).Error; err != nil {
 			return err
@@ -35,7 +50,8 @@ func CreateSensorLog(log *models.SensorLog) error {
 	})
 }
 
-// GetSensorLogsByDeviceID ดึงประวัติค่าเซนเซอร์ย้อนหลังของอุปกรณ์นั้นๆ (เผื่อไว้ทำกราฟในแอป)
+// GetSensorLogsByDeviceID ดึงค่าย้อนหลังของอุปกรณ์ตัวหนึ่ง เรียงจากล่าสุด จำกัดจำนวนด้วย limit
+// เตรียมไว้สำหรับทำกราฟในอนาคต ตอนนี้ยังไม่มีที่ไหนเรียกใช้
 func GetSensorLogsByDeviceID(deviceID int, limit int) ([]models.SensorLog, error) {
 	var logs []models.SensorLog
 	// ดึงข้อมูลโดยเรียงจากเวลาล่าสุดลงไป และจำกัดจำนวนแถว (limit)
@@ -46,6 +62,8 @@ func GetSensorLogsByDeviceID(deviceID int, limit int) ([]models.SensorLog, error
 	return logs, err
 }
 
+// GetDevicesByCoop ดึงอุปกรณ์ทั้งหมดในคอก coopID
+// ถูกเรียกจาก: handlers/sensor_log.go
 func GetDevicesByCoop(coopID int) ([]models.Device, error) {
 	var devices []models.Device
 
@@ -55,10 +73,9 @@ func GetDevicesByCoop(coopID int) ([]models.Device, error) {
 	return devices, err
 }
 
-// MotionAlertRow คือ 1 เหตุการณ์ที่เซนเซอร์ตรวจจับการเคลื่อนไหว (PIR) ที่วงกบประตูคอก
-// ตรวจจับได้ - มาจากแถว sensor_log ปกติ แค่กรองเฉพาะอุปกรณ์ที่ชื่อ/ประเภทมีคำว่า
-// "pir" อยู่ (ตามแบบแผนเดียวกับที่ฝั่งแอปใช้เลือกไอคอนอุปกรณ์อยู่แล้ว - ดู
-// Main_DeviceSummary.dart ที่เช็ค lower.contains('pir'))
+// MotionAlertRow = เหตุการณ์ 1 ครั้งที่เซนเซอร์ PIR ที่วงกบประตูคอกตรวจพบการเคลื่อนไหว
+// เป็นรูปแบบข้อมูลที่ส่งกลับให้หน้าบ้าน (มีชื่อคอก ชื่ออุปกรณ์ ค่า และเวลา)
+// ระบุว่าเป็นเซนเซอร์ PIR จากชื่อ/ประเภทอุปกรณ์ที่มีคำว่า "pir" (แบบเดียวกับที่แอปใช้เลือกไอคอน)
 type MotionAlertRow struct {
 	CoopID     int       `json:"coop_id"`
 	CoopName   string    `json:"coop_name"`
@@ -68,10 +85,18 @@ type MotionAlertRow struct {
 	Timestamp  time.Time `json:"timestamp"`
 }
 
-// GetMotionAlertsForUser คืนรายการเหตุการณ์ตรวจจับความเคลื่อนไหว (จากเซนเซอร์ PIR
-// ที่วงกบประตู) ของทุกคอกที่ userID เป็นเจ้าของ นับตั้งแต่เวลา since เป็นต้นมา
-// เรียงจากล่าสุดไปเก่าสุด - ฝั่งหน้าบ้านเอาไปจัดกลุ่มแสดงผลเป็น "คอกที่ X มีอะไร
-// เดินผ่าน" ต่อเอง
+// GetMotionAlertsForUser ดึงเหตุการณ์ตรวจพบความเคลื่อนไหวของทุกคอกของผู้ใช้ ตั้งแต่เวลา since
+//
+// ขั้นตอน:
+//  1. ดึงคอกทั้งหมดของผู้ใช้ (GetAllCoops) ถ้าไม่มีคอก คืนรายการว่าง
+//  2. หาอุปกรณ์ในคอกเหล่านั้นที่ชื่อหรือประเภทมีคำว่า pir (LOWER(...) LIKE '%pir%' ไม่สนตัวพิมพ์)
+//  3. ดึง sensor_log ของอุปกรณ์เหล่านั้น ตั้งแต่ since และ value > 0 เท่านั้น
+//     ทำไมต้อง value > 0: บอร์ดส่งค่า 0 (ไม่พบอะไร) มาเรื่อย ๆ ถ้าไม่กรอง ค่า 0 จะถูกนับว่า
+//     "ตรวจพบ" และแจ้งเตือนจะเด้งกลับมาทันทีหลังกด "รับทราบ"
+//  4. ประกอบผลลัพธ์ โดยใช้ map จับคู่ device -> คอก / ชื่อ (เร็วกว่าการ query ซ้ำทีละแถว)
+//
+// ถูกเรียกจาก: handlers/sensor_log.go -> GetMotionAlertsHandler (GET /api/motion-alerts)
+// ใช้แสดง "ตรวจพบการเคลื่อนไหว" ในหน้าการแจ้งเตือนและหน้าข้อมูลคอกไก่
 func GetMotionAlertsForUser(userID int, since time.Time) ([]MotionAlertRow, error) {
 	coops, err := GetAllCoops(userID)
 	if err != nil {
@@ -132,4 +157,3 @@ func GetMotionAlertsForUser(userID int, since time.Time) ([]MotionAlertRow, erro
 	}
 	return result, nil
 }
-

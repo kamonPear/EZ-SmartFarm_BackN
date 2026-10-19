@@ -1,3 +1,10 @@
+// =====================================================================================
+// ไฟล์ database/food_distribution_repository.go - ประวัติ "การแจกจ่ายอาหาร" ให้แต่ละคอก
+// =====================================================================================
+//
+// ทุกครั้งที่ตัดสต็อกอาหาร (อัตโนมัติ 06:00 น. หรือกด "ตัดสต็อก" เอง) ระบบจะบันทึกว่า
+// แต่ละคอกได้อาหารประเภทไหนไปกี่กิโลกรัม เก็บในตาราง food_distributions
+// ใช้แสดง "ประวัติการนำออก/แจกจ่ายอาหาร" ในหน้าคลังอาหาร และใช้เช็กว่าวันนี้ตัดสต็อกไปแล้วหรือยัง
 package database
 
 import (
@@ -9,9 +16,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// CreateFoodDistributionBatch inserts one row per coop for a single deduction event,
-// owned by userID. All rows share the same DistributedAt timestamp so they can be
-// grouped back together.
+// CreateFoodDistributionBatch บันทึกการแจกจ่ายอาหาร 1 ครั้ง (1 แถวต่อ 1 คอก)
+//
+// รับค่า: foodType (เม็ดเล็ก/เม็ดใหญ่), items (คอกไหนได้กี่ กก.), userID
+// ทุกแถวในรอบเดียวกันใช้เวลา DistributedAt เดียวกัน (now) เพื่อจัดกลุ่มกลับเป็น "รอบเดียวกัน" ได้
+// DB.Create(&rows) แบบส่ง slice = insert ทีเดียวหลายแถว เร็วกว่าวนทีละแถว
+// ถูกเรียกจาก: handlers/foodstock.go (ตัดสต็อกอัตโนมัติ/ตัดเอง) และ handlers/food_distribution.go
 func CreateFoodDistributionBatch(foodType string, items []models.FoodDistributionItem, userID int) ([]models.FoodDistribution, error) {
 	now := time.Now()
 	rows := make([]models.FoodDistribution, 0, len(items))
@@ -34,8 +44,10 @@ func CreateFoodDistributionBatch(foodType string, items []models.FoodDistributio
 	return rows, nil
 }
 
-// GetFoodDistributionHistory retrieves every distribution recorded by userID,
-// optionally filtered by food type, newest first.
+// GetFoodDistributionHistory ดึงประวัติแจกจ่ายอาหารทั้งหมดของผู้ใช้ เรียงจากใหม่ไปเก่า
+// ถ้าส่ง foodType มา จะกรองเฉพาะประเภทนั้น
+// Preload("Coop") = ดึงข้อมูลคอกที่ผูกอยู่มาด้วยในคราวเดียว จะได้แสดงชื่อคอกได้เลย
+// ถูกเรียกจาก: handlers/food_distribution.go (GET /api/foods/distribution)
 func GetFoodDistributionHistory(foodType string, userID int) ([]models.FoodDistribution, error) {
 	var rows []models.FoodDistribution
 	query := DB.Preload("Coop").Where("user_id = ?", userID).Order("distributed_at DESC")
@@ -49,10 +61,11 @@ func GetFoodDistributionHistory(foodType string, userID int) ([]models.FoodDistr
 	return rows, nil
 }
 
-// GetLatestDistributionDate returns the most recent DistributedAt recorded for userID's
-// foodType (every row in a batch shares the same timestamp - see
-// CreateFoodDistributionBatch), used by handlers.RunCatchUpDeduction to tell whether
-// today's automatic deduction already happened.
+// GetLatestDistributionDate หาวันเวลาล่าสุดที่เคยตัดสต็อกอาหารประเภทนี้ของผู้ใช้
+// คืนค่า (เวลา, เจอไหม, error) ถ้าไม่เคยตัดเลยคืน found = false
+//
+// ใช้ทำอะไร: handlers/foodstock.go (ตัวตัดสต็อกตามหลัง / catch-up) เช็กว่า "วันนี้ตัดไปแล้วหรือยัง"
+// กันการตัดซ้ำสองครั้งในวันเดียว กรณีเซิร์ฟเวอร์ Render หลับไปตอน 06:00 แล้วตื่นทีหลัง
 func GetLatestDistributionDate(userID int, foodType string) (time.Time, bool, error) {
 	var row models.FoodDistribution
 	err := DB.Where("user_id = ? AND food_type = ?", userID, foodType).
@@ -67,7 +80,9 @@ func GetLatestDistributionDate(userID int, foodType string) (time.Time, bool, er
 	return row.DistributedAt, true, nil
 }
 
-// DeleteAllFoodDistribution wipes the entire food distribution history
+// DeleteAllFoodDistribution ลบประวัติแจกจ่ายอาหาร "ทั้งหมดของผู้ใช้คนนั้น"
+// ต้องกรอง user_id เสมอ ถ้าลบทั้งตาราง ผู้ใช้คนหนึ่งจะลบข้อมูลของทุกฟาร์มได้
+// ถูกเรียกจาก: handlers/food_distribution.go (DELETE /api/foods/distribution)
 func DeleteAllFoodDistribution(userID int) error {
 	// Scoped to the caller - "delete all" means all of *their* history. A global
 	// wipe here would let any logged-in user destroy every other user's records.

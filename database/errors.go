@@ -1,9 +1,14 @@
+// =====================================================================================
+// ไฟล์ database/errors.go - error กลางที่ทุก repository ใช้ร่วมกัน
+// =====================================================================================
 package database
 
 import "errors"
 
-// ErrNotFound is returned by repository functions when a requested row either doesn't
-// exist at all, or exists but isn't owned by the requesting user. Handlers should map
-// this to an HTTP 404 - per the auth contract, a non-owner must never be able to tell
-// the difference between "doesn't exist" and "exists but isn't yours".
+// ErrNotFound คืนจากฟังก์ชันใน database เมื่อ "ไม่มีข้อมูลนั้น" หรือ "มีแต่เป็นของผู้ใช้คนอื่น"
+// handler จะแปลงเป็น HTTP 404 เสมอ
+//
+// ทำไมรวม 2 กรณีเป็น error เดียว: ถ้าตอบ 403 (ไม่มีสิทธิ์) กับ 404 (ไม่มี) ต่างกัน
+// ผู้ไม่หวังดีจะไล่เดา id แล้วรู้ได้ว่าข้อมูลไหนมีอยู่จริงในระบบ จึงตอบเหมือนกันทั้งคู่
+// ถูกใช้ที่: แทบทุกไฟล์ใน database/ และ handlers/ (เช็กด้วย errors.Is(err, database.ErrNotFound))
 var ErrNotFound = errors.New("not found")

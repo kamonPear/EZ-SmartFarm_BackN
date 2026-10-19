@@ -1,3 +1,10 @@
+// =====================================================================================
+// ไฟล์ handlers/device_type.go - API "ชนิดอุปกรณ์" (แม่แบบชื่อ+ไอคอน ไว้ลากไปวางในคอก)
+// =====================================================================================
+//
+// ในหน้าจัดวางระบบเซนเซอร์ ด้านข้างมีรายการชนิดอุปกรณ์ (เช่น DHT22, MQ-135, พัดลม)
+// ผู้ใช้เพิ่มชนิดเองได้ (ชื่อ + ไอคอน SVG) แล้วลากไปวางในช่องของคอก
+// ตาราง device_type แยกตามผู้ใช้ (user_id) ไฟล์นี้คุยกับ database.DB โดยตรง เพราะ query สั้นและใช้ที่เดียว
 package handlers
 
 import (
@@ -13,14 +20,17 @@ import (
 	"gorm.io/gorm"
 )
 
+// createDeviceTypeRequest body ตอนเพิ่มชนิดอุปกรณ์: ชื่อ และไอคอน (SVG data URI)
 type createDeviceTypeRequest struct {
 	Name string `json:"name"`
 	Icon string `json:"icon"`
 }
 
-// CreateDeviceTypeHandler เพิ่ม "ชนิด" อุปกรณ์ใหม่ (ชื่อ+ไอคอน) ไว้ใช้ซ้ำตอนจัดวาง
-// อุปกรณ์ลงคอก - เฉพาะในฟาร์ม (user) ของตัวเองเท่านั้น
-// POST /api/device-types
+// CreateDeviceTypeHandler (POST /api/device-types) เพิ่มชนิดอุปกรณ์ใหม่ในฟาร์มของผู้ใช้
+//  1. ต้องมีทั้งชื่อและไอคอน ไม่งั้น 400
+//  2. กันชื่อซ้ำในฟาร์มเดียวกัน แบบไม่สนตัวพิมพ์ (LOWER(name) = LOWER(?)) ซ้ำ -> 409
+//     ฟาร์มอื่นตั้งชื่อเดียวกันได้ เพราะเช็กเฉพาะ user_id ของตัวเอง
+//  3. บันทึก ตอบ 201 พร้อมข้อมูลที่บันทึก
 func CreateDeviceTypeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -74,9 +84,8 @@ func CreateDeviceTypeHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(deviceType)
 }
 
-// GetDeviceTypesHandler คืนรายการชนิดอุปกรณ์ที่ผู้ใช้เพิ่มเองไว้ทั้งหมด - user ใหม่
-// เริ่มจากรายการว่าง ไม่มีชนิดอุปกรณ์ตั้งต้นให้ ต้องเพิ่มเองผ่าน POST /api/device-types
-// GET /api/device-types
+// GetDeviceTypesHandler (GET /api/device-types) ดึงชนิดอุปกรณ์ทั้งหมดของผู้ใช้ เรียงตามชื่อ
+// ผู้ใช้ใหม่จะได้รายการว่าง ไม่มีชนิดตั้งต้นให้ ต้องเพิ่มเอง
 func GetDeviceTypesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -101,13 +110,16 @@ func GetDeviceTypesHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rows)
 }
 
+// updateDeviceTypeRequest body ตอนแก้ไขชนิดอุปกรณ์: ชื่อใหม่ และไอคอนใหม่
 type updateDeviceTypeRequest struct {
 	Name string `json:"name"`
 	Icon string `json:"icon"`
 }
 
-// UpdateDeviceTypeHandler แก้ไขชื่อ/ไอคอนของชนิดอุปกรณ์ที่เพิ่มเอง - เฉพาะของตัวเองเท่านั้น
-// PUT /api/device-types?id=1
+// UpdateDeviceTypeHandler (PUT /api/device-types?id=1) แก้ชื่อ/ไอคอนของชนิดอุปกรณ์
+//  1. หาแถวด้วย id และ user_id (เป็นของตัวเองเท่านั้น) ไม่เจอ -> 404
+//  2. กันชื่อซ้ำกับชนิดอื่นในฟาร์ม (ไม่นับตัวเอง: id != ?) ซ้ำ -> 409
+//  3. บันทึกด้วย DB.Save
 func UpdateDeviceTypeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -174,10 +186,10 @@ func UpdateDeviceTypeHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(deviceType)
 }
 
-// DeleteDeviceTypeHandler ลบชนิดอุปกรณ์ที่เพิ่มเอง - เฉพาะของตัวเองเท่านั้น (ไม่กระทบ
-// อุปกรณ์ที่ถูกวางไปแล้วในคอกต่างๆ เพราะตอนวางจะ copy ชื่อ+ไอคอนไปเก็บแยกต่างหาก
-// ไม่ได้อ้างอิงกลับมาที่แถวนี้)
-// DELETE /api/device-types?id=1
+// DeleteDeviceTypeHandler (DELETE /api/device-types?id=1) ลบชนิดอุปกรณ์ของผู้ใช้
+// ลบด้วยเงื่อนไข id + user_id ถ้าไม่มีแถวถูกลบ (RowsAffected = 0) = ไม่เจอ/ไม่ใช่ของผู้ใช้ -> 404
+// ไม่กระทบอุปกรณ์ที่วางในคอกไปแล้ว เพราะตอนวางคัดลอกชื่อและไอคอนไปเก็บในตาราง device เอง
+// ไม่ได้อ้างอิงกลับมาที่แถวนี้ สำเร็จตอบ 204 (ไม่มีเนื้อหา)
 func DeleteDeviceTypeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

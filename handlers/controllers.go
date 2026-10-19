@@ -1,3 +1,19 @@
+// =====================================================================================
+// ไฟล์ handlers/controllers.go - API รับข้อมูลจากบอร์ดผ่าน HTTP (ทางสำรอง / รุ่นแรก)
+// =====================================================================================
+//
+// ช่องทางหลักที่บอร์ดใช้ส่งข้อมูลตอนนี้คือ MQTT (services/mqtt_service.go)
+// ไฟล์นี้เป็นทางเลือกแบบ HTTP สำหรับทดสอบ: แค่เช็กว่าอุปกรณ์มีอยู่ในผังและตั้งเป็น Online
+//
+// หมายเหตุสำหรับ handler ทุกไฟล์ในโฟลเดอร์ handlers/:
+// handler = ฟังก์ชันรับ HTTP request (r) แล้วเขียนคำตอบกลับ (w) ส่วนใหญ่ทำตามแบบเดียวกัน คือ
+//  1. เช็ก method (GET/POST/PUT/DELETE)
+//  2. ดึง userID ของผู้ที่ล็อกอิน จาก auth.UserIDFromContext(r)
+//     (middleware RequireAuth ตรวจ JWT แล้วใส่ userID ไว้ใน context ก่อนเข้ามาที่นี่)
+//  3. อ่าน JSON จาก body หรือ id จาก query string (?id=)
+//  4. ตรวจความถูกต้องของข้อมูล แล้วเรียกฟังก์ชันใน database/
+//  5. แปลง error เป็นรหัส HTTP (ErrNotFound -> 404, ข้อมูลผิด -> 400, อื่น ๆ -> 500)
+//  6. ตอบกลับเป็น JSON
 package handlers // ปรับชื่อ package ตามโปรเจกต์คุณ
 
 import (
@@ -10,7 +26,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// ฟังก์ชันสำหรับรับข้อมูลจาก Arduino
+// HandleArduinoUpload สร้าง handler สำหรับ POST /api/sensor/upload (บอร์ดส่งข้อมูลผ่าน HTTP)
+// รับ db เข้ามาแล้วคืนฟังก์ชัน handler (closure) เพื่อให้ handler ใช้ db ตัวนี้ได้
+//
+// ขั้นตอน:
+//  1. แปลง JSON เป็น ArduinoPayload
+//  2. หาอุปกรณ์จาก (coop_id, slot_index) ถ้าไม่เจอ -> 404 "ไม่มีอุปกรณ์นี้ในผัง"
+//  3. ถ้าเจอ ตั้งสถานะเป็น Online และอัปเดตเวลาล่าสุด
+//
+// ไม่ต้องล็อกอิน (บอร์ดไม่มี JWT) และยังไม่ได้บันทึกค่าเซนเซอร์ (ทางหลักบันทึกผ่าน MQTT)
+// ถูกลงทะเบียนใน: routes/routes.go
 func HandleArduinoUpload(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// 1. แปลง JSON จาก Request มาใส่ใน Struct

@@ -1,3 +1,10 @@
+// =====================================================================================
+// ไฟล์ handlers/importfood.go - API นำเข้าอาหาร (ส่วน "นำเข้าอาหาร" ในหน้าคลังอาหาร)
+// =====================================================================================
+//
+// นำเข้า 1 ครั้ง = 1 ล็อต (ตาราง importfood): ประเภท, ปริมาณ (กก.), วันหมดอายุ, ราคา ฯลฯ
+// บันทึกล็อตแล้ว ยอดในคลัง (foodstock) ของประเภทนั้นจะเพิ่มขึ้นอัตโนมัติ
+// ข้อมูลอยู่ใน database/importfood_repository.go
 package handlers
 
 import (
@@ -12,8 +19,14 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// CreateImportFoodHandler records a new food import lot and adds it onto the current foodstock total
-// POST /api/importfoods
+// CreateImportFoodHandler (POST /api/importfoods) บันทึกล็อตอาหารที่นำเข้าใหม่
+// ตรวจข้อมูลก่อน:
+//   - ปริมาณต้องไม่ติดลบ และต้องมีวันหมดอายุ
+//   - ประเภทต้องเป็น "เม็ดเล็ก" หรือ "เม็ดใหญ่" (models.IsValidFoodType)
+//     เพราะสต็อกแยกตามประเภทนี้ ถ้าพิมพ์ผิดจะไปสร้างสต็อกประเภทแปลก ๆ
+//
+// จากนั้น database.CreateImportFood บันทึกล็อตและบวกยอดเข้าคลังใน Transaction เดียว
+// ตอบ 201 พร้อมข้อมูลล็อต
 func CreateImportFoodHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -59,8 +72,9 @@ func CreateImportFoodHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(lot)
 }
 
-// GetImportFoodHandler retrieves a single import food lot by ID
-// GET /api/importfoods?id=1
+// GetImportFoodHandler (GET /api/importfoods?id=1) ดึงล็อตเดียวตาม id (เฉพาะของผู้ใช้)
+// ไม่เจอหรือเป็นของคนอื่น -> 404
+// ถูกเรียกผ่าน: handleImportFoodsGet ใน routes.go (เมื่อมี ?id=)
 func GetImportFoodHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -96,8 +110,8 @@ func GetImportFoodHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(lot)
 }
 
-// DeleteAllImportFoodsHandler clears the caller's own food import lot history.
-// DELETE /api/importfoods
+// DeleteAllImportFoodsHandler (DELETE /api/importfoods) ล้างประวัติการนำเข้าทั้งหมดของผู้ใช้
+// ลบแค่ "ประวัติ" ยอดคงเหลือในคลังไม่เปลี่ยน
 func DeleteAllImportFoodsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -123,8 +137,9 @@ func DeleteAllImportFoodsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Import food history cleared"})
 }
 
-// GetAllImportFoodsHandler retrieves the caller's full import food history
-// GET /api/importfoods
+// GetAllImportFoodsHandler (GET /api/importfoods) ดึงประวัติการนำเข้าทั้งหมดของผู้ใช้
+// ใช้แสดงตาราง "ประวัติการนำเข้าอาหาร"
+// ถูกเรียกผ่าน: handleImportFoodsGet ใน routes.go (เมื่อไม่มี ?id=)
 func GetAllImportFoodsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)

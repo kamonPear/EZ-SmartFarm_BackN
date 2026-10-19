@@ -1,3 +1,18 @@
+// =====================================================================================
+// ไฟล์ routes/routes.go - "แผนที่" ของ API: URL ไหนไปเรียก handler ตัวไหน
+// =====================================================================================
+//
+// เมื่อหน้าบ้านเรียก เช่น GET /api/coops ระบบจะดูตารางในไฟล์นี้ว่าต้องส่งต่อให้ใคร
+// แต่ละบรรทัดอ่านได้เป็น: เมทอด + path + (ยาม) + handler
+//
+// ยามที่ครอบ (มาจาก auth/middleware.go):
+//  - ไม่มียาม                     -> เปิดสาธารณะ: /health, login, รับค่าจากเซนเซอร์ (บอร์ด ESP32 ไม่มี JWT)
+//  - auth.RequireAuth            -> ต้อง login (แนบ JWT) ใช้กับเกือบทุก API
+//  - auth.RequireAdminKey        -> ต้องมีรหัสผู้ดูแล: สร้าง/ลบบัญชี
+//  - auth.RequireScheduledTaskKey -> ต้องมีรหัสงานตั้งเวลา: ตัดสต็อกอาหารอัตโนมัติ
+//
+// ใช้ http.ServeMux ของ Go 1.22 ขึ้นไป ที่รองรับรูปแบบ "GET /path" (ระบุเมทอดในตัว) ได้เลย
+// จึงไม่ต้องพึ่งเฟรมเวิร์กภายนอกอย่าง Gin/Echo
 package routes
 
 import (
@@ -9,32 +24,49 @@ import (
 	"EZ-SmartFarm_BachN/handlers"
 )
 
-// router is a thin wrapper around http.ServeMux that registers one handler per
-// HTTP method, so every route below reads as method + path + handler at a glance.
+// router ห่อ http.ServeMux ไว้ เพื่อให้เขียนลงทะเบียนเส้นทางสั้น ๆ อ่านง่าย เช่น rg.GET(path, handler)
+// แทนการเขียน mux.HandleFunc("GET "+path, handler) ยาว ๆ ทุกบรรทัด
 type router struct {
 	mux *http.ServeMux
 }
 
+// GET ลงทะเบียน handler ให้ path นี้ เฉพาะคำขอแบบ GET (ดึงข้อมูล)
+// POST = เพิ่มข้อมูล, PUT = แก้ไขข้อมูล, DELETE = ลบข้อมูล (3 ฟังก์ชันถัดไปทำงานแบบเดียวกัน)
 func (rg *router) GET(path string, h http.HandlerFunc)    { rg.mux.HandleFunc("GET "+path, h) }
 func (rg *router) POST(path string, h http.HandlerFunc)   { rg.mux.HandleFunc("POST "+path, h) }
 func (rg *router) PUT(path string, h http.HandlerFunc)    { rg.mux.HandleFunc("PUT "+path, h) }
 func (rg *router) DELETE(path string, h http.HandlerFunc) { rg.mux.HandleFunc("DELETE "+path, h) }
 
-// ANY registers a handler for a path regardless of method (the handler itself
-// decides what it accepts, or accepts everything).
+// ANY ลงทะเบียน handler ให้ path นี้ทุกเมทอด (ให้ handler ตัดสินใจเองว่ารับอะไร)
+// ใช้กับ /health ที่ Render เรียกเช็กว่าเซิร์ฟเวอร์ยังทำงานอยู่
 func (rg *router) ANY(path string, h http.HandlerFunc) { rg.mux.HandleFunc(path, h) }
 
-// SetupRoutes เติม db *gorm.DB ไว้ในวงเล็บ เพื่อรับค่า db มาจาก main.go
+// SetupRoutes ลงทะเบียน API ทุกเส้นของระบบ ถูกเรียกครั้งเดียวจาก main.go
+//
+// รับ db *gorm.DB มาจาก main.go เพื่อส่งต่อให้ handler ที่ต้องใช้ db ตรง ๆ
+// (ตอนนี้คือ HandleArduinoUpload ที่รับข้อมูลจากบอร์ด) handler อื่นใช้ database.GetDB() เอง
+//
+// หมวด API หลัก:
+//  - Auth          : login / register / ลบผู้ใช้ / ดูข้อมูลตัวเอง
+//  - Coops         : คอกไก่ + ตำแหน่งบนผังฟาร์ม, farm-layout (รูปทรงผัง)
+//  - Farm threshold: ค่ามาตรฐานอุณหภูมิ/แอมโมเนีย (ย้ายมาเก็บใน DB เว็บกับแอปจึงเห็นค่าเดียวกัน)
+//  - Eggs / Healths: บันทึกไข่, ผลตรวจสุขภาพ
+//  - Foods         : คลังอาหาร, ตัดสต็อก, ประวัติแจกจ่าย, นำเข้าอาหาร (importfoods)
+//  - Data purge    : ลบข้อมูลที่สำรองแล้ว
+//  - Vaccines      : ประเภทวัคซีน, ตาราง, แจ้งเตือนในปฏิทิน
+//  - Health appointments / Calendar markers: นัดตรวจ และจุดบนปฏิทินรวม
+//  - Devices / Device types: อุปกรณ์ในคอก และชนิดอุปกรณ์ที่ผู้ใช้สร้างเอง
+//  - Sensors       : รับค่าจากบอร์ด (สาธารณะ) และดูการแจ้งเตือนความเคลื่อนไหว
 func SetupRoutes(db *gorm.DB) {
 	rg := &router{mux: http.DefaultServeMux}
 
 	rg.ANY("/health", handlers.HealthCheck)
 
 	// Auth
-	rg.POST("/api/auth/login", handlers.LoginHandler)                      // public
-	rg.POST("/api/auth/register", auth.RequireAdminKey(handlers.RegisterHandler)) // needs X-Admin-Key
+	rg.POST("/api/auth/login", handlers.LoginHandler)                              // public
+	rg.POST("/api/auth/register", auth.RequireAdminKey(handlers.RegisterHandler))  // needs X-Admin-Key
 	rg.DELETE("/api/auth/users", auth.RequireAdminKey(handlers.DeleteUserHandler)) // needs X-Admin-Key
-	rg.GET("/api/auth/me", auth.RequireAuth(handlers.MeHandler))               // any logged-in user
+	rg.GET("/api/auth/me", auth.RequireAuth(handlers.MeHandler))                   // any logged-in user
 
 	// Coops
 	rg.POST("/api/coops", auth.RequireAuth(handlers.CreateCoopHandler))
@@ -142,8 +174,10 @@ func SetupRoutes(db *gorm.DB) {
 	rg.GET("/api/motion-alerts", auth.RequireAuth(handlers.GetMotionAlertsHandler))
 }
 
-// handleCoopsGet dispatches GET /api/coops to a single-record or list lookup
-// depending on whether an id query parameter is present.
+// handleCoopsGet แยกเส้นทาง GET /api/coops เป็น 2 กรณีตาม query:
+//  - มี ?id=  -> GetCoopHandler (ดูคอกเดียว)
+//  - ไม่มี    -> GetAllCoopsHandler (ดูทุกคอกของผู้ใช้)
+// ทำไมต้องแยกแบบนี้: ServeMux จับคู่จาก path อย่างเดียว ไม่ได้ดู query string
 func handleCoopsGet(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("id") != "" {
 		handlers.GetCoopHandler(w, r)
@@ -152,6 +186,10 @@ func handleCoopsGet(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleEggsGet แยก GET /api/eggs ตาม query:
+//  - ?id=       -> ดูรายการไข่รายการเดียว
+//  - ?coop_id=  -> ดูไข่ทั้งหมดของคอกนั้น
+//  - ไม่มี       -> ดูไข่ทั้งหมดของผู้ใช้
 func handleEggsGet(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Query().Get("id") != "":
@@ -163,6 +201,7 @@ func handleEggsGet(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleHealthsGet แยก GET /api/healths ตาม query: ?id= (รายการเดียว) / ?coop_id= (ทั้งคอก) / ไม่มี (ทั้งหมด)
 func handleHealthsGet(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Query().Get("id") != "":
@@ -174,6 +213,7 @@ func handleHealthsGet(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleHealthAppointmentsGet แยก GET /api/health-appointments: ?coop_id= (นัดของคอกนั้น) / ไม่มี (นัดทั้งหมด)
 func handleHealthAppointmentsGet(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("coop_id") != "" {
 		handlers.GetHealthAppointmentsByCoopHandler(w, r)
@@ -182,6 +222,7 @@ func handleHealthAppointmentsGet(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleFoodsGet แยก GET /api/foods: ?id= (สต็อกอาหารประเภทเดียว) / ไม่มี (สต็อกทุกประเภท)
 func handleFoodsGet(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("id") != "" {
 		handlers.GetFoodstockHandler(w, r)
@@ -190,6 +231,7 @@ func handleFoodsGet(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleImportFoodsGet แยก GET /api/importfoods: ?id= (ล็อตนำเข้าเดียว) / ไม่มี (ทุกล็อต)
 func handleImportFoodsGet(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("id") != "" {
 		handlers.GetImportFoodHandler(w, r)
@@ -198,6 +240,7 @@ func handleImportFoodsGet(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleDevicesGet แยก GET /api/devices: ?id= (อุปกรณ์ตัวเดียว) / ?coop_id= (อุปกรณ์ในคอกนั้น) / ไม่มี (ทั้งหมด)
 func handleDevicesGet(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Query().Get("id") != "":

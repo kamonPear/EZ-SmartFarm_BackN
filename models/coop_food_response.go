@@ -1,10 +1,14 @@
+// =====================================================================================
+// ไฟล์ models/coop_food_response.go - รูปแบบผลลัพธ์ "อาหารที่แต่ละคอกกินต่อวัน"
+// =====================================================================================
 package models
 
-// CoopFoodConsumption represents the estimated daily food consumption of a single coop.
-// The estimate is derived from the chickens' age (which decides FoodType) and the coop's
-// own headcount (Amount x the owner's configured grams per bird, FoodRules.CoopFeed) - there is
-// no per-coop feed sensor, so this is still an estimate, not a measured value, but it is
-// the same formula actually used to deduct stock (handlers.ComputeDailyFoodConsumption).
+// CoopFoodConsumption ผลการประมาณอาหารของ 1 คอก ส่งจาก GET /api/foods/coop-consumption
+//  - AgeWeeks / FoodType / EstimatedKgPerDay : อายุไก่ (สัปดาห์), ประเภทอาหาร, กก./วัน
+//  - AgeMinWeeks / AgeMaxWeeks / GramsPerBird : ช่วงอายุในตารางให้อาหารที่คอกนี้ตกอยู่ และกรัม/ตัว/วัน
+//    ใช้บอกผู้ใช้ "ทำไม" คอกนี้ได้ค่านี้ (max 0 = ไม่จำกัดอายุสูงสุด)
+// เป็นค่าประมาณจากจำนวนไก่ (ไม่มีเซนเซอร์วัดอาหาร) แต่สูตรเดียวกับที่ใช้ตัดสต็อกจริง
+// ไม่ใช่ตาราง ใช้แค่ส่งออก JSON
 type CoopFoodConsumption struct {
 	CoopID            int     `json:"coop_id"`
 	NameCoop          string  `json:"name_coop"`
