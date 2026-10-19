@@ -1,3 +1,10 @@
+// =====================================================================================
+// ไฟล์ database/farm_layout_repository.go - อ่าน/บันทึก "รูปทรงผังฟาร์ม" ของผู้ใช้
+// =====================================================================================
+//
+// ผังฟาร์มมี 3 รูปทรงให้เลือก: วงกลม / สามเหลี่ยม / สี่เหลี่ยม (หน้าจัดวางผังฟาร์มบนเว็บ)
+// ผู้ใช้ 1 คนมีผังได้ 1 แถวในตาราง farm_layouts (ส่วนตำแหน่งคอกแต่ละคอกเก็บใน coop.pos_x/pos_y)
+// ถูกเรียกจาก: handlers/farm_layout.go
 package database
 
 import (
@@ -8,12 +15,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// GetFarmLayout retrieves userID's farm layout row. Returns a row with an empty
-// Shape WITHOUT writing anything to the database if the user hasn't chosen a shape
-// yet - a row is only ever created by UpdateFarmLayoutShape, the first time the user
-// actually picks one (see the same reasoning on GetFarmThreshold in
-// farm_threshold_repository.go - every user's dashboard load used to silently create
-// a "circle" row for them even if they'd never opened the layout page).
+// GetFarmLayout ดึงรูปทรงผังฟาร์มของผู้ใช้ (userID)
+//
+//   - ถ้ามีแถวอยู่แล้ว -> คืนแถวนั้น
+//   - ถ้า error อื่นที่ไม่ใช่ "ไม่พบข้อมูล" -> คืน error
+//   - ถ้ายังไม่เคยเลือกรูปทรง -> คืนผังที่ Shape ว่าง "" โดย "ไม่บันทึกลง DB"
+//
+// ทำไมไม่สร้างแถวค่าเริ่มต้นให้เลย: เดิมเคยทำ ผลคือแค่เปิดหน้าแรกก็ได้ผัง "วงกลม" ทั้งที่ผู้ใช้
+// ไม่เคยเลือก หน้าบ้านจึงแยกไม่ออกว่า "ยังไม่ได้ตั้ง" หรือ "ตั้งเป็นวงกลม"
+// แถวจะถูกสร้างเฉพาะใน UpdateFarmLayoutShape ตอนผู้ใช้กดบันทึกจริงเท่านั้น
+// ถูกเรียกจาก: handlers/farm_layout.go -> GetFarmLayoutHandler
 func GetFarmLayout(userID int) (*models.FarmLayout, error) {
 	var layout models.FarmLayout
 
@@ -30,8 +41,13 @@ func GetFarmLayout(userID int) (*models.FarmLayout, error) {
 	return &models.FarmLayout{UserID: userID, Shape: ""}, nil
 }
 
-// UpdateFarmLayoutShape sets userID's chosen outline shape to whatever they submit,
-// creating their row on first use.
+// UpdateFarmLayoutShape บันทึกรูปทรงผังที่ผู้ใช้เลือก (circle/triangle/square)
+//
+// ขั้นตอน:
+//  1. หาแถวของผู้ใช้ ถ้ายังไม่มี (ใช้ครั้งแรก) สร้างแถวใหม่ก่อน
+//  2. ใส่ Shape ใหม่แล้ว DB.Save (Save = อัปเดตทุกคอลัมน์ของแถวนั้น)
+//
+// ถูกเรียกจาก: handlers/farm_layout.go -> UpdateFarmLayoutHandler (ปุ่ม "บันทึกผังฟาร์ม" บนเว็บ)
 func UpdateFarmLayoutShape(shape string, userID int) (*models.FarmLayout, error) {
 	var layout models.FarmLayout
 	err := DB.Where("user_id = ?", userID).First(&layout).Error

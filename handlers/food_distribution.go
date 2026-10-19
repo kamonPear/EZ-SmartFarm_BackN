@@ -1,3 +1,10 @@
+// =====================================================================================
+// ไฟล์ handlers/food_distribution.go - API บันทึกการแจกอาหารให้แต่ละคอก (ตัดสต็อกด้วยมือ)
+// =====================================================================================
+//
+// ผู้ใช้กรอกว่าวันนี้ให้อาหารแต่ละคอกไปกี่ กก. ระบบจะตัดสต็อกตามยอดรวม
+// และเก็บประวัติรายคอกไว้ในตาราง food_distribution
+// ข้อมูลอยู่ใน database/food_distribution_repository.go และ foodstock_repository.go
 package handlers
 
 import (
@@ -11,13 +18,20 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// RecordFoodDistributionHandler is the single action that both deducts foodstock and
-// records how it was split across coops - there is no fixed daily amount anymore,
-// the deducted total is exactly the sum of every item's kg_given the caller provides.
-// Every coop_id referenced must belong to the caller (404 otherwise). Stock is
-// deducted first; the distribution rows are only written once that succeeds, so a
-// failed deduction never leaves an orphaned distribution record behind.
-// POST /api/foods/distribution
+// RecordFoodDistributionHandler (POST /api/foods/distribution) ตัดสต็อกและบันทึกการแจกอาหาร
+// body: {"food_type":"เม็ดเล็ก", "items":[{"coop_id":1, "kg_given":2.5}, ...]}
+//
+// ขั้นตอน:
+//  1. ประเภทอาหารต้องถูกต้อง และต้องมีอย่างน้อย 1 คอก
+//  2. วนทุกคอก: ค่าต้องถูกต้อง (kg ไม่ติดลบ), รวมยอด, และคอกต้องเป็นของผู้ใช้ (ไม่ใช่ -> 404)
+//  3. ยอดรวมต้องมากกว่า 0
+//  4. เช็กสต็อกก่อน ถ้าไม่พอ -> 400 พร้อมบอกว่ามีเท่าไร ขาดเท่าไร
+//     ทำไม: ยอดนี้ผู้ใช้กรอกเองว่าให้ไปจริง ถ้ารับไว้ทั้งที่สต็อกไม่พอ ตัวเลขจะไม่ตรงความจริง
+//     ผู้ใช้ควรรู้ทันทีว่าต้องเติมสต็อกก่อน
+//  5. ตัดสต็อกก่อน แล้วค่อยบันทึกประวัติรายคอก
+//     ทำไมลำดับนี้: ถ้าตัดสต็อกล้ม จะไม่มีประวัติที่ไม่มีการตัดจริงค้างอยู่
+//
+// ตอบ 201 พร้อมแถวประวัติที่บันทึก
 func RecordFoodDistributionHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -113,8 +127,8 @@ func RecordFoodDistributionHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rows)
 }
 
-// DeleteAllFoodDistributionHandler clears the caller's own food distribution history.
-// DELETE /api/foods/distribution
+// DeleteAllFoodDistributionHandler (DELETE /api/foods/distribution) ล้างประวัติการแจกอาหารทั้งหมดของผู้ใช้
+// ลบแค่ประวัติ ไม่คืนยอดกลับเข้าสต็อก
 func DeleteAllFoodDistributionHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -140,8 +154,9 @@ func DeleteAllFoodDistributionHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Food distribution history cleared"})
 }
 
-// GetFoodDistributionHistoryHandler lists every distribution the caller recorded, newest first.
-// GET /api/foods/distribution?food_type=เม็ดเล็ก (food_type optional)
+// GetFoodDistributionHistoryHandler (GET /api/foods/distribution?food_type=เม็ดเล็ก)
+// ดึงประวัติการแจกอาหาร เรียงจากล่าสุด กรองตามประเภทได้ (ไม่ใส่ = ทุกประเภท)
+// ไม่มีข้อมูลส่ง [] แทน null
 func GetFoodDistributionHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)

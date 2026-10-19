@@ -1,3 +1,14 @@
+// =====================================================================================
+// ไฟล์ handlers/auth.go - API เข้าสู่ระบบ / สร้างบัญชี / ลบบัญชี / ดูข้อมูลตัวเอง
+// =====================================================================================
+//
+// ภาพรวมการยืนยันตัวตน (authentication) ของระบบ:
+//  1. ผู้ใช้ส่ง username + password มาที่ LoginHandler
+//  2. ถ้าถูก ระบบออก JWT (ตั๋วดิจิทัล) ให้ (auth/jwt.go -> GenerateToken)
+//  3. แอป/เว็บเก็บ token ไว้ แล้วแนบมาทุก request ใน header "Authorization: Bearer <token>"
+//  4. middleware RequireAuth (auth/middleware.go) ตรวจ token แล้วใส่ userID ไว้ให้ handler ใช้
+//
+// การสร้าง/ลบบัญชี ต้องใช้รหัสผู้ดูแล (X-Admin-Key) ผู้ใช้ทั่วไปสมัครเองไม่ได้
 package handlers
 
 import (
@@ -13,18 +24,35 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
+// writeJSON ตัวช่วยตอบกลับเป็น JSON: ตั้ง Content-Type, เขียนรหัส HTTP, แปลง body เป็น JSON
+// เขียนเป็นฟังก์ชันไว้เพื่อไม่ต้องเขียน 3 บรรทัดนี้ซ้ำทุก handler
+// ใช้ใน: handlers/auth.go, data_purge.go และไฟล์อื่น ๆ ใน handlers
 func writeJSON(w http.ResponseWriter, status int, body interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(body)
 }
 
+// writeJSONErr ตอบ error เป็น JSON รูปแบบ {"error": "ข้อความ"}
+// แอปและเว็บจะอ่าน field error ไปแสดงให้ผู้ใช้ได้เหมือนกันทุก API
 func writeJSONErr(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
-// LoginHandler authenticates a username/password and issues a JWT.
-// POST /api/auth/login (public)
+// LoginHandler (POST /api/auth/login ไม่ต้องล็อกอินก่อน) ตรวจชื่อผู้ใช้/รหัสผ่าน แล้วออก JWT
+//
+// ขั้นตอน:
+//  1. ตัดช่องว่างหัวท้าย และต้องกรอกทั้งสองช่อง ไม่งั้น 400
+//  2. หาผู้ใช้จากชื่อ (database.GetUserByUsername)
+//  3. ตรวจ 3 อย่าง ถ้าข้อใดไม่ผ่าน ตอบ 401 "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" ข้อความเดียวกันหมด
+//     - ไม่มีผู้ใช้นี้
+//     - ชื่อตรงกันแบบตัวพิมพ์เล็ก/ใหญ่ทุกตัวหรือไม่ (MySQL เทียบแบบไม่สนตัวพิมพ์
+//     "Kkk" จึงหาเจอบัญชี "kkk" ต้องเทียบซ้ำใน Go)
+//     - รหัสผ่านตรงกับ hash ที่เก็บไว้ไหม (auth.CheckPassword ใช้ bcrypt)
+//     ทำไมไม่บอกว่าผิดตรงไหน: กันคนร้ายเดาว่าชื่อผู้ใช้ไหนมีอยู่จริงในระบบ
+//  4. ออก token (auth.GenerateToken) แล้วส่งกลับพร้อม id และชื่อผู้ใช้
+//
+// เรียกจาก: หน้าเข้าสู่ระบบของแอปและเว็บ
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -79,8 +107,13 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RegisterHandler creates a new user. Mounted behind auth.RequireAdminKey.
-// POST /api/auth/register
+// RegisterHandler (POST /api/auth/register ต้องมี X-Admin-Key) สร้างบัญชีผู้ใช้ใหม่
+//  1. ต้องกรอกชื่อผู้ใช้และรหัสผ่าน
+//  2. ชื่อซ้ำ -> 409 Conflict
+//  3. hash รหัสผ่านด้วย bcrypt (auth.HashPassword) ก่อนเก็บ ไม่เก็บรหัสผ่านจริงลง DB
+//  4. บันทึกผู้ใช้ ตอบ 201 พร้อม id และชื่อ (ไม่ส่งรหัสผ่านกลับ)
+//
+// ทำไมต้องใช้รหัสผู้ดูแล: ระบบให้เจ้าของฟาร์มที่ได้รับอนุญาตเท่านั้นใช้งาน ไม่เปิดให้ใครก็สมัครได้
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -135,13 +168,10 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// DeleteUserHandler permanently deletes an account and everything it owns (coops and
-// everything under them, farm threshold/layout, food stock/imports, etc.) Gated by
-// the same X-Admin-Key as RegisterHandler, not auth.RequireAuth - deleting an account
-// is an administrative action, not something a logged-in user does to themselves via
-// their own token, and this intentionally allows deleting an account by id without
-// needing to log in as that account first (e.g. the account's credentials were lost).
-// DELETE /api/auth/users?id=<id>  needs X-Admin-Key
+// DeleteUserHandler (DELETE /api/auth/users?id=<id> ต้องมี X-Admin-Key)
+// ลบบัญชีและข้อมูลทั้งหมดของบัญชีนั้นถาวร (คอก ข้อมูลในคอก สต็อกอาหาร ค่าตั้งค่า ฯลฯ)
+// ทำไมใช้ X-Admin-Key แทน token ของผู้ใช้: เป็นงานของผู้ดูแล และลบได้แม้ลืมรหัสผ่านบัญชีนั้นแล้ว
+// ไม่เจอผู้ใช้ -> 404 / การลบจริงทำใน database.DeleteUser (Transaction)
 func DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -179,8 +209,9 @@ func DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "user and all owned data deleted"})
 }
 
-// MeHandler returns the authenticated caller's own user record. Mounted behind auth.RequireAuth.
-// GET /api/auth/me
+// MeHandler (GET /api/auth/me ต้องล็อกอิน) ส่งข้อมูลของผู้ที่ล็อกอินอยู่ (id, username)
+// แอป/เว็บใช้ตรวจว่า token ที่เก็บไว้ยังใช้ได้ไหม และเอาชื่อผู้ใช้ไปแสดง
+// ถ้าบัญชีถูกลบไปแล้ว (token ยังไม่หมดอายุแต่ไม่มีผู้ใช้) ตอบ 401 ให้ออกจากระบบ
 func MeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

@@ -1,8 +1,11 @@
+// =====================================================================================
+// ไฟล์ models/health_request.go - รูปแบบ JSON ตอนเพิ่ม/แก้ไขผลตรวจสุขภาพ
+// =====================================================================================
 package models
 
 import "time"
 
-// CreateHealthRequest represents the request payload for creating a health record
+// CreateHealthRequest body ของ POST /api/healths: คอก, จำนวนดี, จำนวนป่วย, วันที่, หมายเหตุ
 type CreateHealthRequest struct {
 	CoopID     int       `json:"coop_id" binding:"required"`
 	Healthy    int       `json:"healthy" binding:"required"`
@@ -11,7 +14,7 @@ type CreateHealthRequest struct {
 	Note       string    `json:"note"`
 }
 
-// UpdateHealthRequest represents the payload for updating a health record
+// UpdateHealthRequest body ของ PUT /api/healths?id= (แก้เฉพาะช่องที่ส่งมา)
 type UpdateHealthRequest struct {
 	CoopID     int       `json:"coop_id"`
 	Healthy    int       `json:"healthy"`
@@ -20,7 +23,7 @@ type UpdateHealthRequest struct {
 	Note       string    `json:"note"`
 }
 
-// HealthResponse represents the response payload for health data
+// HealthResponse รูปแบบตอบกลับแบบย่อ ตอนนี้ไม่มีที่ไหนใช้ (API ส่ง Health ตรง ๆ)
 type HealthResponse struct {
 	HealthID   int       `json:"health_id"`
 	CoopID     int       `json:"coop_id"`

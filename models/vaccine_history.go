@@ -1,11 +1,17 @@
+// =====================================================================================
+// ไฟล์ models/vaccine_history.go - โครงสร้างตาราง vaccine_history (ประวัติการให้วัคซีนจริง)
+// =====================================================================================
 package models
 
 import "time"
 
-// VaccineHistory คือประวัติการให้วัคซีน/ยาจริงกับคอกใดคอกหนึ่ง แยกออกจากตาราง vaccine
-// (ซึ่งเก็บแค่ "เกณฑ์" ของยาแต่ละตัว ไม่ผูกกับคอกไหน) - ทุกแถวในตารางนี้คือเหตุการณ์
-// "ให้จริง" แล้วเสมอ จึงไม่ต้องใช้ pointer field เหมือนตอนที่เคยรวมสองแนวคิดไว้
-// ตารางเดียวกัน (coop_id/birthday/record_date เป็นค่าบังคับมีเสมอ ไม่มี NULL)
+// VaccineHistory การให้วัคซีน/ยาจริง 1 ครั้งกับคอกหนึ่ง
+// ทุกแถวคือเหตุการณ์ "ให้แล้ว" เสมอ coop_id / record_date จึงบังคับต้องมี (not null)
+//   - NameCoop / Birthday : คัดลอกจากคอกตอนบันทึก (ประวัติแสดงข้อมูล ณ ตอนนั้น)
+//   - Name               : ชื่อวัคซีน ใช้จับคู่กับประเภทในตาราง vaccine (คอลัมน์ name_vaccine)
+//   - RecommendedAge     : อายุไก่ที่แนะนำให้ (เก็บเป็นข้อความ)
+//
+// ระบบดูว่า "คอกนี้ให้วัคซีนตัวนี้แล้วหรือยัง" จากการมีแถว (coop_id, name_vaccine) ในตารางนี้
 type VaccineHistory struct {
 	VaccineID int    `gorm:"primaryKey;column:id" json:"vaccine_id"`
 	CoopID    int    `gorm:"column:coop_id;type:int;size:32;not null;index" json:"coop_id"`
@@ -22,6 +28,7 @@ type VaccineHistory struct {
 	Coop Coop `gorm:"foreignKey:CoopID;constraint:-" json:"coop,omitempty"`
 }
 
+// TableName บอก GORM ว่าใช้ตาราง "vaccine_history"
 func (VaccineHistory) TableName() string {
 	return "vaccine_history"
 }

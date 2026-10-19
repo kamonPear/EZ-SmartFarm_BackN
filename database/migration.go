@@ -1,3 +1,16 @@
+// =====================================================================================
+// ไฟล์ database/migration.go - สร้าง/ปรับโครงสร้างตารางอัตโนมัติทุกครั้งที่เปิดเซิร์ฟเวอร์
+// =====================================================================================
+//
+// Migration = การทำให้โครงสร้างฐานข้อมูลตรงกับ model ในโค้ด (models/*.go)
+// ทุกครั้งที่เซิร์ฟเวอร์เริ่ม main.go จะเรียก MigrateModels
+//
+// หลักการสำคัญของไฟล์นี้: ทุกขั้นตอน "รันซ้ำได้ปลอดภัย" (idempotent)
+// คือเช็กก่อนว่าทำไปแล้วหรือยัง ถ้าทำแล้วก็ข้าม จึงรันทุกครั้งที่เปิดเครื่องได้โดยไม่พัง
+// ฟังก์ชันชื่อ ensure... = "ทำให้แน่ใจว่ามี/เป็นแบบนี้" ส่วน ...Dropped = "ทำให้แน่ใจว่าลบไปแล้ว"
+//
+// ส่วนใหญ่เป็นการแก้ปัญหาฐานข้อมูลรุ่นเก่าที่สร้างไว้ก่อนแก้โค้ด (คอลัมน์ผิดชนิด, index เก่า, ตารางที่ถูกแยก)
+// ทำให้ฐานข้อมูลเดิมที่ใช้งานจริงอัปเกรดได้โดยไม่ต้องลบข้อมูลทิ้ง
 package database
 
 import (
@@ -16,7 +29,22 @@ import (
 	"gorm.io/gorm"
 )
 
-// MigrateModels creates all tables in the database
+// MigrateModels จุดเริ่ม migration ทั้งหมด เรียกครั้งเดียวตอนเปิดเซิร์ฟเวอร์จาก main.go
+//
+// ลำดับการทำงาน:
+//  1. ปิดการเช็ก Foreign Key ชั่วคราว (กันการปรับตารางชนกัน)
+//  2. แก้คอลัมน์รุ่นเก่าก่อน AutoMigrate (egg.coop_id เป็น INT, แยกตารางวัคซีน)
+//  3. AutoMigrate ทุก model = GORM สร้างตาราง/เพิ่มคอลัมน์ที่ขาดให้อัตโนมัติ
+//     ถ้าล้มกลางทาง แค่ log เตือนแล้วทำต่อ เพราะขั้นต่อไปยังจำเป็นต้องรัน
+//  4. เปิดการเช็ก Foreign Key กลับ
+//  5. ขยายคอลัมน์ไอคอนเป็น TEXT (ไอคอน SVG ยาวเกิน 255 ตัวอักษร)
+//     และ kg_given เป็นทศนิยม 4 ตำแหน่ง (ไก่เล็กกินวันละ ~0.0006 กก. ถ้า 2 ตำแหน่งจะเป็น 0.00)
+//  6. จัดการ index / Foreign Key: เพิ่มที่ต้องมี ลบที่ไม่ใช้แล้ว
+//  7. สร้างแถวสต็อกอาหาร และกำหนดเจ้าของให้ข้อมูลเก่า (ensureAdminBootstrapAndOwnership)
+//  8. เพิ่ม unique key: ชื่อคอกห้ามซ้ำในผู้ใช้เดียวกัน, ผลตรวจสุขภาพ 1 แถว/คอก/วัน,
+//     เลขอุปกรณ์ห้ามซ้ำในคอกเดียวกัน
+//
+// ทำไมลำดับสำคัญ: บางขั้นต้องทำหลังขั้นอื่น เช่น unique (user_id, name_coop) ต้องรอเติม user_id ให้ครบก่อน
 func MigrateModels(db *gorm.DB) error {
 	// Disable foreign key checks temporarily to avoid constraint conflicts during migration
 	if err := db.Exec("SET FOREIGN_KEY_CHECKS=0").Error; err != nil {
@@ -164,28 +192,91 @@ func MigrateModels(db *gorm.DB) error {
 	}
 	ensureUniqueIndex(db, "device", "uq_device_coop_slot", "ALTER TABLE `device` ADD UNIQUE KEY `uq_device_coop_slot` (`coop_id`, `slot_index`)")
 
+	// เวลาเก่าที่เขียนตอน backend ยังใช้เวลา UTC ให้เลื่อนเป็นเวลาไทย (+7 ชม.) ครั้งเดียว
+	shiftUTCDatetimesToBangkok(db)
+
 	fmt.Println("✓ All tables migrated successfully")
 	return nil
 }
 
-// ownedTables lists every "root" entity table that got a user_id column added for the
-// per-user data ownership feature (auth). Coop/Foodstock/ImportFood/FoodDistribution/
-// FarmLayout/Vaccine/DeviceType each own their data directly; Egg/Health/
-// VaccineHistory/Device are scoped indirectly through their parent coop instead (see
-// database.CoopBelongsToUser) and so don't need a column or FK of their own here.
+// datetimeColumnsWrittenInUTC คอลัมน์ชนิด DATETIME ที่ backend เขียนลงไป ตอนยังรันด้วยเวลา UTC บน Render
+// (คอลัมน์ชนิด DATE เก็บแค่วันที่ ไม่มีเวลา จึงไม่อยู่ในรายการนี้)
+var datetimeColumnsWrittenInUTC = [][2]string{
+	{"User", "created_at"}, {"User", "updated_at"},
+	{"coop", "date_adopt_animals"}, {"coop", "birthday"},
+	{"device", "last_update"},
+	{"egg", "date_collect_egg"},
+	{"food_distribution", "distributed_at"},
+	{"health", "date"},
+	{"health_appointment", "created_at"},
+	{"importfood", "import_date"},
+	{"sensor_log", "timestamp"},
+}
+
+// shiftUTCDatetimesToBangkok เลื่อนเวลาเก่าทุกคอลัมน์ใน datetimeColumnsWrittenInUTC ไป +7 ชั่วโมง "ครั้งเดียว"
+//
+// ทำไมต้องมี: เดิม backend บน Render ใช้เวลา UTC เวลาที่ลงฐานข้อมูลจึงช้ากว่าเวลาไทย 7 ชั่วโมง
+// (เช่น สร้างบัญชีตอน 13:36 แต่ created_at เป็น 06:36) ตอนนี้ main.go ตั้ง time.Local เป็นเวลาไทยแล้ว
+// แถวใหม่จึงถูกต้อง ฟังก์ชันนี้แก้แถวเก่าให้เป็นเวลาไทยเหมือนกัน
+//
+// กันทำซ้ำ: บันทึกชื่อ migration ลงตาราง app_migration ถ้าเคยทำแล้วจะข้ามทันที
+// ทำใน Transaction เดียว ถ้าคอลัมน์ไหนล้ม ย้อนกลับทั้งหมด และไม่บันทึกว่าทำแล้ว (ครั้งหน้าจะลองใหม่)
+// ข้ามค่าว่าง / ค่าศูนย์ (ก่อนปี 1900) เพราะเป็นค่า "ไม่มีวันที่" ถ้าบวกเวลาเข้าไปจะกลายเป็นวันที่จริง
+// ตรวจชนิดคอลัมน์จริงก่อน ถ้าไม่ใช่ DATETIME (หรือไม่มีคอลัมน์นั้น) จะข้าม
+//
+// ข้อควรรู้: แถวที่เคยเขียนจากเครื่องที่ตั้งเวลาไทยอยู่แล้ว (รัน go run . ในเครื่อง) จะถูกบวกไปด้วย
+// คอลัมน์ที่เป็นวันที่ (วันเกิดไก่ วันเก็บไข่ ฯลฯ) ไม่กระทบวันที่ที่แสดง ส่วนคอลัมน์ที่เป็นเวลา จะเลื่อนไป 7 ชม.
+// ถูกเรียกจาก: MigrateModels
+func shiftUTCDatetimesToBangkok(db *gorm.DB) {
+	const name = "2026-10-19_shift_utc_datetimes_to_bangkok"
+	if err := db.Exec("CREATE TABLE IF NOT EXISTS `app_migration` (`name` VARCHAR(100) NOT NULL PRIMARY KEY, `applied_at` DATETIME NOT NULL)").Error; err != nil {
+		log.Printf("Warning: could not create app_migration table: %v", err)
+		return
+	}
+	var done int64
+	if err := db.Raw("SELECT COUNT(*) FROM `app_migration` WHERE `name` = ?", name).Scan(&done).Error; err != nil || done > 0 {
+		return
+	}
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		for _, tc := range datetimeColumnsWrittenInUTC {
+			table, column := tc[0], tc[1]
+			var dataType string
+			if err := tx.Raw("SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?", table, column).Scan(&dataType).Error; err != nil {
+				return err
+			}
+			if dataType != "datetime" {
+				continue
+			}
+			res := tx.Exec(fmt.Sprintf("UPDATE `%s` SET `%s` = `%s` + INTERVAL 7 HOUR WHERE `%s` > '1900-01-01'", table, column, column, column))
+			if res.Error != nil {
+				return fmt.Errorf("%s.%s: %w", table, column, res.Error)
+			}
+			log.Printf("  shifted %s.%s +7h (%d rows)", table, column, res.RowsAffected)
+		}
+		return tx.Exec("INSERT INTO `app_migration` (`name`, `applied_at`) VALUES (?, ?)", name, time.Now()).Error
+	})
+	if err != nil {
+		log.Printf("Warning: could not shift UTC datetimes to Bangkok time: %v", err)
+		return
+	}
+	fmt.Println("✓ Shifted old UTC datetimes to Thai time (+7h)")
+}
+
+// ownedTables รายชื่อตาราง "ระดับบนสุด" ที่มีคอลัมน์ user_id ระบุเจ้าของโดยตรง
+// ตารางลูก (egg, health, vaccine_history, device) ไม่อยู่ในนี้ เพราะเช็กเจ้าของผ่านคอกแม่
+// (ดู CoopBelongsToUser ใน ownership.go)
+// ถูกใช้ใน: ensureAdminBootstrapAndOwnership
 var ownedTables = []string{"coop", "foodstock", "importfood", "food_distribution", "farm_layout", "vaccine", "device_type"}
 
-// ensureAdminBootstrapAndOwnership is the one-time (but safe-to-rerun) migration step
-// that turns on per-user data ownership on a database that predates it:
-//  1. If the User table is empty, create a first account with a freshly generated random
-//     password (logged once to stdout and written to
-//     database/scripts/ADMIN_CREDENTIALS.local.txt - gitignored, local-machine only).
-//  2. Backfill every pre-existing row in ownedTables that has no owner yet (user_id
-//     IS NULL, i.e. it existed before this migration) onto the earliest account, so
-//     nothing already in the live database becomes orphaned or inaccessible.
-//  3. Add a real FK (user_id -> User.id_User, ON DELETE RESTRICT) on each of those
-//     tables, using the same guarded ensureForeignKey helper as every other FK in this
-//     file, so it's a no-op on every subsequent boot.
+// ensureAdminBootstrapAndOwnership เปิดระบบ "ข้อมูลแยกตามผู้ใช้" ให้ฐานข้อมูลรุ่นเก่าที่ยังไม่มีเจ้าของ
+//  1. ถ้ายังไม่มีผู้ใช้เลย สร้างบัญชีแรกพร้อมรหัสผ่านสุ่ม (แสดงใน log ครั้งเดียว และเขียนลงไฟล์ในเครื่อง)
+//  2. ข้อมูลเก่าในตาราง ownedTables ที่ user_id ยังว่าง ให้เป็นของบัญชีแรก
+//     กันข้อมูลเดิมกลายเป็น "ไม่มีเจ้าของ" จนไม่มีใครเห็น
+//  3. เพิ่ม Foreign Key user_id -> User (ON DELETE RESTRICT = ห้ามลบผู้ใช้ที่ยังมีข้อมูลอยู่)
+//
+// รันซ้ำได้: ครั้งต่อไปไม่มีแถวที่ user_id ว่าง และ FK มีแล้ว จึงไม่ทำอะไร
+// ถูกเรียกจาก: MigrateModels
 func ensureAdminBootstrapAndOwnership(db *gorm.DB) error {
 	// GORM's AutoMigrate created user_id as BIGINT on every ownedTables (its default
 	// mapping for a plain Go `int` field), even though the models now carry an explicit
@@ -223,11 +314,10 @@ func ensureAdminBootstrapAndOwnership(db *gorm.DB) error {
 	return nil
 }
 
-// ensureBootstrapAdmin returns the id of the account that pre-existing, ownerless rows
-// should be backfilled onto: the earliest registered user. There are no roles in this
-// system, so "earliest account" is the only meaningful stand-in for "the farm's owner".
-// If there are no users at all (a brand-new database), it creates one with a freshly
-// generated random password. Safe to call on every boot.
+// ensureBootstrapAdmin หา id ของบัญชีที่จะเป็นเจ้าของข้อมูลเก่า = ผู้ใช้คนแรกที่สมัคร (id น้อยสุด)
+// ระบบไม่มีการแบ่ง role จึงถือว่าบัญชีแรกคือเจ้าของฟาร์ม
+// ถ้าฐานใหม่ยังไม่มีผู้ใช้ จะสร้างบัญชีให้ด้วยรหัสผ่านสุ่ม (generateStrongPassword) และ hash ด้วย bcrypt
+// ถูกเรียกจาก: ensureAdminBootstrapAndOwnership
 func ensureBootstrapAdmin(db *gorm.DB) (int, error) {
 	var existing models.User
 	err := db.Order("id_User ASC").First(&existing).Error
@@ -270,9 +360,9 @@ func ensureBootstrapAdmin(db *gorm.DB) (int, error) {
 	return admin.ID, nil
 }
 
-// writeAdminCredentialsFile saves the freshly generated admin credentials to a local,
-// gitignored file so they aren't lost if the startup log scrolls away. This is the only
-// place the plaintext password is ever persisted.
+// writeAdminCredentialsFile บันทึกชื่อผู้ใช้/รหัสผ่านของบัญชีแรกลงไฟล์
+// database/scripts/ADMIN_CREDENTIALS.local.txt (ไฟล์นี้อยู่ใน .gitignore ไม่ถูกอัปขึ้น git)
+// ทำไม: กันรหัสผ่านหายถ้า log เลื่อนผ่านไป เป็นที่เดียวที่เก็บรหัสผ่านแบบอ่านออก
 func writeAdminCredentialsFile(username, password string) error {
 	dir := filepath.Join("database", "scripts")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -291,8 +381,8 @@ func writeAdminCredentialsFile(username, password string) error {
 	return os.WriteFile(filepath.Join(dir, "ADMIN_CREDENTIALS.local.txt"), []byte(content), 0o600)
 }
 
-// generateStrongPassword returns a cryptographically random password of length n,
-// drawn from a mixed letters+digits+symbols alphabet (crypto/rand, NOT math/rand).
+// generateStrongPassword สร้างรหัสผ่านสุ่มยาว n ตัว จากตัวอักษร+ตัวเลข+สัญลักษณ์
+// ใช้ crypto/rand (สุ่มแบบปลอดภัยสำหรับงานความปลอดภัย) ไม่ใช้ math/rand ที่เดาลำดับได้
 func generateStrongPassword(n int) (string, error) {
 	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*-_"
 	b := make([]byte, n)
@@ -307,7 +397,9 @@ func generateStrongPassword(n int) (string, error) {
 	return string(b), nil
 }
 
-// ensureUniqueIndex adds a unique index only if it doesn't already exist (AutoMigrate re-runs on every startup)
+// ensureUniqueIndex เพิ่ม unique index ถ้ายังไม่มี (เช็กจาก information_schema ก่อน)
+// ถ้าเพิ่มไม่สำเร็จ (เช่นมีข้อมูลซ้ำอยู่แล้ว) แค่ log เตือน ไม่หยุดเซิร์ฟเวอร์
+// ทำไมต้องเช็กก่อน: migration รันทุกครั้งที่เปิดเครื่อง ถ้าสั่ง ADD ซ้ำจะ error
 func ensureUniqueIndex(db *gorm.DB, table, indexName, ddl string) {
 	var count int64
 	if err := db.Raw(
@@ -325,11 +417,11 @@ func ensureUniqueIndex(db *gorm.DB, table, indexName, ddl string) {
 	}
 }
 
-// dedupeHealthRecords ลบแถวผลตรวจสุขภาพที่ซ้ำกัน (coop_id, date เดียวกัน) เหลือ
-// ไว้แค่แถวล่าสุด (health_id สูงสุด = insert ล่าสุด) ก่อนเพิ่ม uq_health_coop_date
-// ด้านบนใน MigrateModels - ถ้าไม่ทำก่อน ALTER TABLE จะชนกับข้อมูลซ้ำที่มีอยู่แล้ว
-// แล้วถูกข้ามแบบเงียบๆ (ensureUniqueIndex แค่ log warning ไม่ throw) ทำให้ไม่มีอะไร
-// กันการบันทึกซ้ำได้จริงสักที แม้จะรัน migration นี้ไปแล้วก็ตาม
+// dedupeHealthRecords ลบผลตรวจสุขภาพที่ซ้ำกัน (คอกเดียวกัน วันเดียวกัน) ให้เหลือแถวล่าสุด (health_id สูงสุด)
+// ต้องทำก่อนเพิ่ม unique key uq_health_coop_date
+// ทำไม: ถ้ามีข้อมูลซ้ำค้างอยู่ การเพิ่ม unique key จะล้ม และ ensureUniqueIndex แค่ log เตือน
+// ผลคือจะไม่มีอะไรกันบันทึกซ้ำได้จริง
+// ถูกเรียกจาก: MigrateModels
 func dedupeHealthRecords(db *gorm.DB) {
 	type dupGroup struct {
 		CoopID int
@@ -363,7 +455,8 @@ func dedupeHealthRecords(db *gorm.DB) {
 	}
 }
 
-// ensureForeignKey adds a foreign key constraint only if it doesn't already exist (AutoMigrate re-runs on every startup)
+// ensureForeignKey เพิ่ม Foreign Key ถ้ายังไม่มี (เช็กจาก information_schema ก่อน)
+// Foreign Key = บังคับว่าค่าในคอลัมน์ต้องมีอยู่จริงในตารางที่อ้างถึง เช่น egg.coop_id ต้องเป็นคอกที่มีจริง
 func ensureForeignKey(db *gorm.DB, table, constraintName, ddl string) {
 	var count int64
 	if err := db.Raw(
@@ -381,12 +474,9 @@ func ensureForeignKey(db *gorm.DB, table, constraintName, ddl string) {
 	}
 }
 
-// ensureColumnIsInt narrows column on table to a plain INT if GORM's AutoMigrate left
-// it as something else (typically BIGINT, its default mapping for a bare Go `int`
-// field before an explicit `type:int` tag is added). A no-op once the column is
-// already INT. nullable controls whether the narrowed column allows NULL - callers
-// must pass the column's actual current nullability (MODIFY replaces the whole column
-// definition, so getting this wrong would silently flip it).
+// ensureColumnIsInt เปลี่ยนชนิดคอลัมน์เป็น INT ถ้ายังไม่ใช่ (ปกติเป็น BIGINT ที่ GORM สร้างไว้รุ่นก่อน)
+// ทำไม: Foreign Key ต้องชนิดตรงกันทั้งสองฝั่ง coop.coop_id เป็น INT ถ้าอีกฝั่งเป็น BIGINT จะสร้าง FK ไม่ได้
+// nullable ต้องส่งให้ตรงกับคอลัมน์จริง เพราะคำสั่ง MODIFY เขียนทับนิยามคอลัมน์ทั้งหมด
 func ensureColumnIsInt(db *gorm.DB, table, column string, nullable bool) {
 	var dataType string
 	if err := db.Raw(
@@ -408,10 +498,9 @@ func ensureColumnIsInt(db *gorm.DB, table, column string, nullable bool) {
 	}
 }
 
-// ensureColumnIsText widens column on table to TEXT if it's still the old VARCHAR(255)
-// GORM's AutoMigrate originally created (AutoMigrate adds missing columns but doesn't
-// retroactively widen an already-existing one when the struct tag changes). A no-op
-// once the column is already text/mediumtext/longtext.
+// ensureColumnIsText ขยายคอลัมน์จาก VARCHAR(255) เป็น TEXT ถ้ายังไม่ใช่
+// ทำไม: AutoMigrate เพิ่มคอลัมน์ใหม่ได้ แต่ไม่ขยายคอลัมน์เดิมให้ ไอคอน SVG ยาว 500+ ตัวอักษร
+// ถ้ายังเป็น 255 การบันทึกจะล้ม
 func ensureColumnIsText(db *gorm.DB, table, column string) {
 	var dataType string
 	if err := db.Raw(
@@ -429,8 +518,8 @@ func ensureColumnIsText(db *gorm.DB, table, column string) {
 	}
 }
 
-// ensureDecimalScale widens a DECIMAL column to at least wantScale decimal places using
-// the given column definition. A no-op once the column already has that scale.
+// ensureDecimalScale ขยายคอลัมน์ DECIMAL ให้มีทศนิยมอย่างน้อย wantScale ตำแหน่ง ถ้ามีครบแล้วก็ข้าม
+// ใช้กับ food_distribution.kg_given (2 -> 4 ตำแหน่ง) ค่าเดิมยังอยู่ครบ
 func ensureDecimalScale(db *gorm.DB, table, column, definition string, wantScale int) {
 	var scale *int
 	if err := db.Raw(
@@ -448,10 +537,8 @@ func ensureDecimalScale(db *gorm.DB, table, column, definition string, wantScale
 	}
 }
 
-// ensureColumnDropped removes a column from table if it's still present. Used to
-// clean up columns that no longer belong on a table after a schema restructure
-// (e.g. vaccine's old coop_id/record_date columns once administration history
-// moved to its own table - see migrateVaccineSplit). A no-op once already dropped.
+// ensureColumnDropped ลบคอลัมน์ที่ไม่ใช้แล้ว ถ้ายังมีอยู่
+// เช่น vaccine.coop_id / record_date หลังย้ายประวัติวัคซีนไปตาราง vaccine_history แล้ว
 func ensureColumnDropped(db *gorm.DB, table, column string) {
 	var count int64
 	if err := db.Raw(
@@ -469,8 +556,8 @@ func ensureColumnDropped(db *gorm.DB, table, column string) {
 	}
 }
 
-// migrationColumnExists reports whether table.column currently exists. Used by
-// migrateVaccineSplit to tolerate running from a partially-completed prior attempt.
+// migrationColumnExists ตอบว่าตารางนี้มีคอลัมน์นี้อยู่หรือไม่ (ดูจาก information_schema)
+// ใช้ใน migrateVaccineSplit เพื่อรันต่อได้แม้ครั้งก่อนทำค้างไว้ครึ่งทาง
 func migrationColumnExists(db *gorm.DB, table, column string) bool {
 	var count int64
 	if err := db.Raw(
@@ -483,12 +570,14 @@ func migrationColumnExists(db *gorm.DB, table, column string) bool {
 	return count > 0
 }
 
-// migrateVaccineSplit is the one-time cutover from the old single-table vaccine
-// design (type rows with coop_id NULL + administration rows with coop_id set, all
-// mixed in the "vaccine" table) to two separate tables: "vaccine" (types only) and
-// "vaccine_history" (administration records only, see models/vaccine_history.go).
-// Guarded on vaccine.coop_id still existing, so this only ever does real work once -
-// every startup after that it's a single harmless COUNT query.
+// migrateVaccineSplit แยกตารางวัคซีนรุ่นเก่า (ตารางเดียว) เป็น 2 ตาราง
+//   - รุ่นเก่า: ตาราง vaccine เก็บทั้ง "ประเภท" (coop_id ว่าง) และ "ประวัติการให้" (coop_id มีค่า) ปนกัน
+//   - รุ่นใหม่: vaccine = ประเภทอย่างเดียว, vaccine_history = ประวัติการให้อย่างเดียว
+//
+// ขั้นตอน: คัดลอกแถวประวัติไป vaccine_history -> ลบแถวประวัติออกจาก vaccine -> ลบคอลัมน์ที่ไม่ใช้
+// ทำจริงแค่ครั้งเดียว: เช็กว่า vaccine.coop_id ยังอยู่ไหม ถ้าไม่อยู่แล้ว = แยกเสร็จแล้ว ข้าม
+// ทำไมแยก: ผู้ใช้เปิดดูตารางแล้วสับสนว่าแถวไหนเป็นประเภท แถวไหนเป็นประวัติ
+// ถูกเรียกจาก: MigrateModels (ก่อน AutoMigrate)
 func migrateVaccineSplit(db *gorm.DB) {
 	var coopIDColumnCount int64
 	if err := db.Raw(
@@ -575,7 +664,7 @@ func migrateVaccineSplit(db *gorm.DB) {
 	log.Printf("✓ Split vaccine into vaccine (types) + vaccine_history (administration records)")
 }
 
-// ensureIndexDropped removes an index if it's still present (used to walk back constraints added by earlier migrations)
+// ensureIndexDropped ลบ index ที่ไม่ใช้แล้วถ้ายังมีอยู่ (ใช้ถอน constraint ที่ migration รุ่นก่อนเคยเพิ่ม)
 func ensureIndexDropped(db *gorm.DB, table, indexName string) {
 	var count int64
 	if err := db.Raw(
@@ -593,7 +682,8 @@ func ensureIndexDropped(db *gorm.DB, table, indexName string) {
 	}
 }
 
-// ensureForeignKeyDropped removes a foreign key constraint if it's still present
+// ensureForeignKeyDropped ลบ Foreign Key ที่ไม่ใช้แล้วถ้ายังมีอยู่
+// เช่น FK ที่อ้างด้วย name_coop ซึ่งทำให้ลบคอกที่ชื่อว่างไม่ได้ (ใช้ coop_id เป็นตัวอ้างอิงจริงแทน)
 func ensureForeignKeyDropped(db *gorm.DB, table, constraintName string) {
 	var count int64
 	if err := db.Raw(
@@ -611,11 +701,11 @@ func ensureForeignKeyDropped(db *gorm.DB, table, constraintName string) {
 	}
 }
 
-// dropAllUniqueIndexesOnColumn removes every unique index touching the given column (except PRIMARY),
-// and any foreign key elsewhere in the schema that references it - MySQL refuses to drop a unique
-// index that a FK still depends on. This is more thorough than ensureIndexDropped/ensureForeignKeyDropped
-// with a hardcoded name because GORM's own AutoMigrate can create a unique index under a name we don't
-// control (e.g. from before the `unique` struct tag was removed).
+// dropAllUniqueIndexesOnColumn ลบ unique index "ทุกตัว" ที่ครอบคอลัมน์นี้ (ยกเว้น PRIMARY)
+// และลบ Foreign Key ที่อ้างคอลัมน์นี้ก่อน เพราะ MySQL ไม่ยอมลบ index ที่ FK ยังใช้อยู่
+// ทำไมไม่ลบตามชื่อ: GORM เคยสร้าง unique index ด้วยชื่อที่เราไม่ได้ตั้งเอง
+// ในฐานจริงพบ 2 ตัวคนละชื่อบนคอลัมน์เดียวกัน ลบทีละชื่อจะตกหล่น
+// ใช้กับ: coop.name_coop และ device.name
 func dropAllUniqueIndexesOnColumn(db *gorm.DB, table, column string) {
 	type fkRef struct {
 		TableName      string

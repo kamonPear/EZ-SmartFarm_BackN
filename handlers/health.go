@@ -1,3 +1,14 @@
+// =====================================================================================
+// ไฟล์ handlers/health.go - API ผลตรวจสุขภาพไก่ และ API เช็กว่าเซิร์ฟเวอร์ทำงานอยู่
+// =====================================================================================
+//
+// ผลตรวจ 1 รายการ = คอก, วันที่ตรวจ, จำนวนไก่สุขภาพดี, จำนวนไก่ป่วย, หมายเหตุ
+// ข้อมูลอยู่ใน database/health_repository.go
+// GET /api/healths แยกไปฟังก์ชันต่าง ๆ ตาม query string ที่ handleHealthsGet ใน routes.go:
+//
+//	?id=       -> GetHealthHandler
+//	?coop_id=  -> GetHealthsByCoopHandler
+//	ไม่มีเลย   -> GetAllHealthsHandler
 package handlers
 
 import (
@@ -12,6 +23,9 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
+// HealthCheck (/health) ตอบ {"status":"ok"} เสมอ ใช้เช็กว่าเซิร์ฟเวอร์ยังทำงานอยู่
+// ไม่เกี่ยวกับ "สุขภาพไก่" Render (ที่ deploy) และบริการปลุกเซิร์ฟเวอร์ใช้ยิงเช็กเป็นระยะ
+// ไม่ต้องล็อกอิน และไม่แตะฐานข้อมูล จึงตอบได้เร็ว
 func HealthCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -21,8 +35,11 @@ func HealthCheck(w http.ResponseWriter, r *http.Request) {
 
 // Handlers for Health CRUD are implemented in database package access
 
-// CreateHealthHandler creates a new health record
-// POST /api/healths
+// CreateHealthHandler (POST /api/healths) บันทึกผลตรวจสุขภาพใหม่
+//   - ต้องมี coop_id และวันที่ตรวจ ไม่งั้น 400
+//   - คอกไม่ใช่ของผู้ใช้ -> 404
+//   - คอกนี้มีผลตรวจของวันนั้นแล้ว (IsDuplicateHealthDate) -> 409 ให้ไปแก้ไขรายการเดิมแทน
+//   - สำเร็จ -> 201
 func CreateHealthHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -65,8 +82,7 @@ func CreateHealthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(health)
 }
 
-// GetHealthHandler retrieves a single health record by ID
-// GET /api/healths?id={id}
+// GetHealthHandler (GET /api/healths?id=) ดึงผลตรวจ 1 รายการ (เฉพาะของผู้ใช้) ไม่เจอ -> 404
 func GetHealthHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -98,8 +114,8 @@ func GetHealthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(h)
 }
 
-// GetHealthsByCoopHandler retrieves health records for a coop
-// GET /api/healths?coop_id={coop_id}
+// GetHealthsByCoopHandler (GET /api/healths?coop_id=) ดึงผลตรวจทั้งหมดของคอกเดียว
+// ใช้ในส่วนประวัติสุขภาพของหน้าแก้ไขข้อมูลคอก ไม่มีข้อมูลส่ง [] แทน null
 func GetHealthsByCoopHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -138,8 +154,7 @@ func GetHealthsByCoopHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(hs)
 }
 
-// GetAllHealthsHandler retrieves all health records
-// GET /api/healths
+// GetAllHealthsHandler (GET /api/healths) ดึงผลตรวจของทุกคอกของผู้ใช้ ใช้ทำกราฟสรุปสุขภาพ
 func GetAllHealthsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -164,8 +179,8 @@ func GetAllHealthsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(hs)
 }
 
-// UpdateHealthHandler updates an existing health record
-// PUT /api/healths?id={id}
+// UpdateHealthHandler (PUT /api/healths?id=) แก้ไขผลตรวจ (แก้เฉพาะช่องที่ส่งมา)
+// ไม่เจอหรือไม่ใช่ของผู้ใช้ -> 404
 func UpdateHealthHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -206,8 +221,7 @@ func UpdateHealthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(h)
 }
 
-// DeleteHealthHandler deletes a health record
-// DELETE /api/healths?id={id}
+// DeleteHealthHandler (DELETE /api/healths?id=) ลบผลตรวจ 1 รายการ ไม่เจอ -> 404
 func DeleteHealthHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

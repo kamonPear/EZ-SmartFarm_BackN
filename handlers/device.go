@@ -1,3 +1,12 @@
+// =====================================================================================
+// ไฟล์ handlers/device.go - API อุปกรณ์ในคอก และการบันทึกผังอุปกรณ์
+// =====================================================================================
+//
+// ข้อมูลอยู่ใน database/device_repository.go
+// หลังเปลี่ยนอุปกรณ์ในคอก จะส่งเลขช่องใหม่ให้บอร์ดทาง MQTT (services.PublishSlotsForCoop)
+// GET /api/devices แยกที่ handleDevicesGet ใน routes.go:
+//
+//	?id= -> GetDeviceHandler, ?coop_id= -> GetDevicesByCoopHandler, ไม่มี -> GetAllDevicesHandler
 package handlers
 
 import (
@@ -14,8 +23,13 @@ import (
 	// 🔥 ลบ "gorm.io/gorm" ออกไปแล้ว เพราะเราใช้ผ่านแพ็กเกจ database แทน
 )
 
-// SaveCoopLayoutHandler จัดการการบันทึกตำแหน่งอุปกรณ์ทั้ง 21 ช่องจาก Angular
-// POST /api/coops/layout?coop_id=1
+// SaveCoopLayoutHandler (POST /api/coops/layout?coop_id=1) บันทึกผังอุปกรณ์ทั้งคอก
+// เรียกจากปุ่ม "บันทึกการจัดวาง" ในหน้าจัดวางระบบเซนเซอร์ (เว็บ Angular)
+// body = รายการช่องทั้งหมด (models.LayoutPayload) แต่ละช่องมีชื่อ ไอคอน ตำแหน่ง
+//  1. ตั้ง header CORS และตอบ OPTIONS (preflight ของเบราว์เซอร์) ทันที
+//  2. อ่าน coop_id และ body แล้วให้ database.SaveCoopLayout ซิงก์อุปกรณ์ใน Transaction
+//     คอกไม่ใช่ของผู้ใช้ -> 404
+//  3. ส่งเลขช่องใหม่ให้บอร์ดของคอกนี้ใน goroutine (ไม่ให้หน้าเว็บรอ MQTT)
 func SaveCoopLayoutHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -85,9 +99,12 @@ func SaveCoopLayoutHandler(w http.ResponseWriter, r *http.Request) {
 // 🌟 ฟังก์ชัน CRUD สำหรับอุปกรณ์ (Device)
 // ==========================================
 
-// attachLatestSensorValues enriches devices with the latest sensor_log value for each,
-// matching the previous behaviour (a small perf optimization: one query for every
-// device's latest reading instead of N+1).
+// attachLatestSensorValues เติม "ค่าล่าสุดจากเซนเซอร์" ลงในอุปกรณ์แต่ละตัว (field Value)
+// ใช้ query เดียวดึงแถวล่าสุด (MAX(log_id)) ของทุกอุปกรณ์พร้อมกัน แล้วจับคู่ด้วย map
+// ทำไมไม่ query ทีละตัว: ถ้ามี 20 อุปกรณ์จะต้องยิง 20 ครั้ง (ปัญหา N+1) ช้ากว่ามาก
+// อุปกรณ์ที่ยังไม่เคยส่งค่า จะได้ Value = nil (หน้าจอแสดง "-")
+// แก้ slice ที่ส่งเข้ามาโดยตรง (ไม่ต้องคืนค่า)
+// ถูกเรียกจาก: GetAllDevicesHandler, GetDevicesByCoopHandler ในไฟล์นี้ และ GetCoopHandler ใน coop.go
 func attachLatestSensorValues(devices []models.Device) {
 	db := database.GetDB()
 	if db == nil || len(devices) == 0 {
@@ -117,7 +134,8 @@ func attachLatestSensorValues(devices []models.Device) {
 	}
 }
 
-// GetAllDevicesHandler ดึงข้อมูลอุปกรณ์ทั้งหมดของผู้เรียก
+// GetAllDevicesHandler (GET /api/devices) ดึงอุปกรณ์ทุกตัวในทุกคอกของผู้ใช้ พร้อมค่าล่าสุด
+// ใช้ในหน้าสถานะการทำงานของอุปกรณ์
 func GetAllDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := auth.UserIDFromContext(r)
 	if !ok {
@@ -137,7 +155,8 @@ func GetAllDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(devices)
 }
 
-// CreateDeviceHandler สร้างอุปกรณ์ใหม่
+// CreateDeviceHandler (POST /api/devices) เพิ่มอุปกรณ์ทีละตัว
+// คอกไม่ใช่ของผู้ใช้ -> 404 สำเร็จ -> 201
 func CreateDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := auth.UserIDFromContext(r)
 	if !ok {
@@ -164,7 +183,7 @@ func CreateDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(device)
 }
 
-// GetDeviceHandler ดึงข้อมูลอุปกรณ์ตาม ID
+// GetDeviceHandler (GET /api/devices?id=) ดึงอุปกรณ์ตัวเดียว ไม่เจอ/ไม่ใช่ของผู้ใช้ -> 404
 func GetDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := auth.UserIDFromContext(r)
 	if !ok {
@@ -184,7 +203,8 @@ func GetDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(device)
 }
 
-// UpdateDeviceHandler แก้ไขข้อมูลอุปกรณ์
+// UpdateDeviceHandler (PUT /api/devices) แก้ไขข้อมูลอุปกรณ์ (id อยู่ใน body)
+// ไม่เจอ -> 404
 func UpdateDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := auth.UserIDFromContext(r)
 	if !ok {
@@ -210,7 +230,11 @@ func UpdateDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(device)
 }
 
-// DeleteDeviceHandler ลบอุปกรณ์ตาม ID หรือตาม (CoopID + SlotIndex)
+// DeleteDeviceHandler (DELETE /api/devices) ลบอุปกรณ์ได้ 2 แบบ
+//   - ?coop_id=&slot_index= : ลบตามตำแหน่งในคอก (หน้าจัดวางใช้แบบนี้ เพราะรู้แค่ตำแหน่งช่อง)
+//     แล้วส่งเลขช่องใหม่ให้บอร์ดทาง MQTT
+//   - ?id= : ลบตาม id ของอุปกรณ์
+//     ไม่ส่งทั้งสองแบบ -> 400
 func DeleteDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := auth.UserIDFromContext(r)
 	if !ok {
@@ -255,7 +279,8 @@ func DeleteDeviceHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Deleted successfully"})
 }
 
-// GetDevicesByCoopHandler ดึงอุปกรณ์ทั้งหมดที่อยู่ใน 1 คอก
+// GetDevicesByCoopHandler (GET /api/devices?coop_id=) ดึงอุปกรณ์ของคอกเดียว พร้อมค่าล่าสุด
+// ใช้ในหน้าสถานะอุปกรณ์รายคอก และโหลดผังเดิมในหน้าจัดวาง คอกไม่ใช่ของผู้ใช้ -> 404
 func GetDevicesByCoopHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := auth.UserIDFromContext(r)
 	if !ok {

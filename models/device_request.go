@@ -1,8 +1,13 @@
+// =====================================================================================
+// ไฟล์ models/device_request.go - รูปแบบ request/response ของอุปกรณ์ (รุ่นเก่า)
+// =====================================================================================
+//
+// ตอนนี้ไม่มีที่ไหนใช้ struct ในไฟล์นี้ API อุปกรณ์รับ/ส่ง models.Device ตรง ๆ
 package models
 
 import "time"
 
-// CreateDeviceRequest represents the request payload for creating a device
+// CreateDeviceRequest รูปแบบเพิ่มอุปกรณ์ (ไม่ได้ใช้แล้ว)
 type CreateDeviceRequest struct {
 	CoopID        int    `json:"coop_id" binding:"required"`
 	Name          string `json:"name" binding:"required"`
@@ -10,14 +15,14 @@ type CreateDeviceRequest struct {
 	CurrentStatus string `json:"current_status"`
 }
 
-// UpdateDeviceRequest represents the request payload for updating a device
+// UpdateDeviceRequest รูปแบบแก้ไขอุปกรณ์ (ไม่ได้ใช้แล้ว)
 type UpdateDeviceRequest struct {
 	Name          string `json:"name"`
 	DeviceType    string `json:"device_type"`
 	CurrentStatus string `json:"current_status"`
 }
 
-// DeviceResponse represents the response payload for device data
+// DeviceResponse รูปแบบตอบกลับอุปกรณ์ (ไม่ได้ใช้แล้ว ระวังสับสนกับ handlers.DeviceResponse ซึ่งเป็นคนละตัว)
 type DeviceResponse struct {
 	DeviceID      int       `json:"device_id"`
 	CoopID        int       `json:"coop_id"`
@@ -26,5 +31,3 @@ type DeviceResponse struct {
 	CurrentStatus string    `json:"current_status"`
 	LastUpdate    time.Time `json:"last_update"`
 }
-
-

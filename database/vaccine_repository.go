@@ -1,3 +1,14 @@
+// =====================================================================================
+// ไฟล์ database/vaccine_repository.go - "ประวัติการให้วัคซีน" ของแต่ละคอก (ตาราง vaccine_history)
+// =====================================================================================
+//
+// ระวังสับสน มี 2 ตารางเรื่องวัคซีน:
+//   - vaccine         : "ประเภท" วัคซีน/ยาที่ผู้ใช้ตั้งไว้ (ชื่อ, วิธีให้, ช่วงอายุที่ให้) -> หน้า "เพิ่มประเภทวัคซีน/ยา"
+//   - vaccine_history : บันทึกว่า "คอกไหนได้รับวัคซีนอะไร วันไหน" จริง <- ไฟล์นี้
+//     -> สร้างเมื่อกด "ให้วัคซีนแล้ว" และแก้ไขได้ในหน้าแก้ไขข้อมูลคอกไก่
+//
+// ทุกฟังก์ชันเช็กว่าคอกเป็นของผู้ใช้ก่อนเสมอ ผ่าน subquery หรือ CoopBelongsToUser
+// ถูกเรียกจาก: handlers/vaccine.go
 package database
 
 import (
@@ -9,9 +20,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// CreateVaccine creates a new vaccine administration record for a coop.
-// The coop must already be loaded (via a caller that verified ownership) so
-// name_coop/birthday can be copied onto the history row.
+// CreateVaccine บันทึกการให้วัคซีน 1 ครั้งของคอก
+// รับข้อมูลคอก (coop) ที่ผู้เรียกโหลดและตรวจสิทธิ์มาแล้ว แล้วคัดลอกชื่อคอกและวันเกิดไก่ลงแถวประวัติด้วย
+// ทำไมต้องคัดลอก: ให้ประวัติแสดงข้อมูล ณ ตอนที่ให้วัคซีน แม้ภายหลังจะแก้ชื่อคอก
+// ถูกเรียกจาก: handlers/vaccine.go (ปุ่ม "ให้วัคซีนแล้ว" / "เสร็จสิ้น" ในหน้าแจ้งเตือน)
 func CreateVaccine(req *models.CreateVaccineRequest, coop *models.Coop) (*models.VaccineHistory, error) {
 	history := models.VaccineHistory{
 		CoopID:         req.CoopID,
@@ -33,7 +45,9 @@ func CreateVaccine(req *models.CreateVaccineRequest, coop *models.Coop) (*models
 	return &history, nil
 }
 
-// GetVaccineByID retrieves a vaccine history record by ID, only if its coop belongs to userID
+// GetVaccineByID ดึงประวัติวัคซีน 1 รายการตาม id เฉพาะของคอกที่ผู้ใช้เป็นเจ้าของ
+// ไม่เจอ หรือเป็นของคนอื่น -> ErrNotFound
+// ถูกใช้ใน UpdateVaccine / DeleteVaccine ด้านล่าง และ handlers/vaccine.go
 func GetVaccineByID(vaccineID int, userID int) (*models.VaccineHistory, error) {
 	var history models.VaccineHistory
 
@@ -49,7 +63,8 @@ func GetVaccineByID(vaccineID int, userID int) (*models.VaccineHistory, error) {
 	return &history, nil
 }
 
-// GetVaccinesByCoopID retrieves all vaccine history records for a specific coop, only if it belongs to userID
+// GetVaccinesByCoopID ดึงประวัติวัคซีนทั้งหมดของคอกเดียว (หน้าต่าง "ดูประวัติ" ในหน้าให้วัคซีน)
+// เช็กก่อนว่าคอกเป็นของผู้ใช้ ถ้าไม่ใช่คืน ErrNotFound
 func GetVaccinesByCoopID(coopID int, userID int) ([]models.VaccineHistory, error) {
 	var history []models.VaccineHistory
 
@@ -70,7 +85,8 @@ func GetVaccinesByCoopID(coopID int, userID int) ([]models.VaccineHistory, error
 	return history, nil
 }
 
-// GetAllVaccines retrieves every vaccine history record belonging to any of userID's coops
+// GetAllVaccines ดึงประวัติวัคซีนของทุกคอกของผู้ใช้ พร้อมข้อมูลคอก (Preload)
+// ถูกเรียกจาก: handlers/vaccine.go (ใช้ทั้งแสดงผล และเช็กว่าวัคซีนไหนให้ไปแล้ว)
 func GetAllVaccines(userID int) ([]models.VaccineHistory, error) {
 	var history []models.VaccineHistory
 
@@ -85,8 +101,9 @@ func GetAllVaccines(userID int) ([]models.VaccineHistory, error) {
 	return history, err
 }
 
-// UpdateVaccine updates an existing vaccine history record, only if its coop belongs to userID.
-// Fields left zero-valued on req are left unchanged.
+// UpdateVaccine แก้ไขประวัติวัคซีน (หน้าต่าง "แก้ไข บันทึกวัคซีน")
+// แก้เฉพาะช่องที่ส่งค่ามา ช่องที่ว่าง ("" หรือวันที่ศูนย์) จะคงค่าเดิมไว้
+// เช็กสิทธิ์ผ่าน GetVaccineByID ก่อน แล้วค่อย DB.Save
 func UpdateVaccine(id int, req *models.UpdateVaccineRequest, userID int) (*models.VaccineHistory, error) {
 	history, err := GetVaccineByID(id, userID)
 	if err != nil {
@@ -117,7 +134,7 @@ func UpdateVaccine(id int, req *models.UpdateVaccineRequest, userID int) (*model
 	return history, nil
 }
 
-// DeleteVaccine deletes a vaccine history record by ID, only if its coop belongs to userID
+// DeleteVaccine ลบประวัติวัคซีน 1 รายการ (เช็กสิทธิ์ผ่าน GetVaccineByID ก่อน)
 func DeleteVaccine(vaccineID int, userID int) error {
 	history, err := GetVaccineByID(vaccineID, userID)
 	if err != nil {
@@ -134,7 +151,8 @@ func DeleteVaccine(vaccineID int, userID int) error {
 	return nil
 }
 
-// DeleteVaccinesByCoopID deletes all vaccine history records for a specific coop
+// DeleteVaccinesByCoopID ลบประวัติวัคซีนทั้งหมดของคอก "โดยไม่เช็กเจ้าของ"
+// ห้ามเรียกตรงจาก handler ให้เรียกผ่าน DeleteVaccinesByCoopIDForUser ที่เช็กสิทธิ์ก่อน
 func DeleteVaccinesByCoopID(coopID int) error {
 	result := DB.Where("coop_id = ?", coopID).Delete(&models.VaccineHistory{})
 	if result.Error != nil {
@@ -146,7 +164,8 @@ func DeleteVaccinesByCoopID(coopID int) error {
 	return nil
 }
 
-// DeleteVaccinesByCoopIDForUser deletes all vaccine history records for a coop, only if it belongs to userID
+// DeleteVaccinesByCoopIDForUser ลบประวัติวัคซีนทั้งหมดของคอก หลังเช็กว่าคอกเป็นของผู้ใช้แล้ว
+// ถูกเรียกจาก: handlers/vaccine.go
 func DeleteVaccinesByCoopIDForUser(coopID int, userID int) error {
 	owned, err := CoopBelongsToUser(coopID, userID)
 	if err != nil {

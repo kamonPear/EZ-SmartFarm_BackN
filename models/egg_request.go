@@ -1,8 +1,11 @@
+// =====================================================================================
+// ไฟล์ models/egg_request.go - รูปแบบ JSON ตอนเพิ่ม/แก้ไขบันทึกไข่
+// =====================================================================================
 package models
 
 import "time"
 
-// CreateEggRequest represents the request payload for creating an egg record
+// CreateEggRequest body ของ POST /api/eggs: คอก, วันที่เก็บ, จำนวนไข่, หมายเหตุ
 type CreateEggRequest struct {
 	CoopID         int       `json:"coop_id" binding:"required"`
 	DateCollectEgg time.Time `json:"date_collect_egg" binding:"required"`
@@ -10,7 +13,7 @@ type CreateEggRequest struct {
 	Note           string    `json:"note"`
 }
 
-// UpdateEggRequest represents the request payload for updating an egg record
+// UpdateEggRequest body ของ PUT /api/eggs?id= ช่องที่เป็นค่าว่าง/ศูนย์ไม่ถูกแก้
 type UpdateEggRequest struct {
 	CoopID         int       `json:"coop_id"`
 	DateCollectEgg time.Time `json:"date_collect_egg"`
@@ -18,7 +21,7 @@ type UpdateEggRequest struct {
 	Note           string    `json:"note"`
 }
 
-// EggResponse represents the response payload for egg data
+// EggResponse รูปแบบตอบกลับแบบย่อ ตอนนี้ไม่มีที่ไหนใช้ (API ส่ง Egg ตรง ๆ)
 type EggResponse struct {
 	EggID          int       `json:"egg_id"`
 	CoopID         int       `json:"coop_id"`

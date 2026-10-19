@@ -1,3 +1,10 @@
+// =====================================================================================
+// ไฟล์ handlers/health_appointment.go - API นัดตรวจสุขภาพไก่ที่ผู้ใช้นัดเอง
+// =====================================================================================
+//
+// ผู้ใช้กดเลือกวันในปฏิทินเพื่อนัดตรวจสุขภาพคอก (ตาราง health_appointments)
+// นัดเหล่านี้แสดงเป็นจุดบนปฏิทิน (handlers/calendar.go) และในรายการแจ้งเตือน
+// ข้อมูลอยู่ใน database/health_appointment_repository.go
 package handlers
 
 import (
@@ -12,8 +19,9 @@ import (
 	"EZ-SmartFarm_BachN/models"
 )
 
-// CreateHealthAppointmentHandler books a manual health-check appointment for a coop
-// POST /api/health-appointments  body: {"coop_id":1,"appointment_date":"2026-10-05T00:00:00Z"}
+// CreateHealthAppointmentHandler (POST /api/health-appointments) สร้างนัดตรวจสุขภาพ
+// body: {"coop_id":1, "appointment_date":"2026-10-05T00:00:00Z"}
+// ต้องมีทั้ง coop_id และวันที่ ไม่งั้น 400 / คอกไม่ใช่ของผู้ใช้ -> 404 / สำเร็จ -> 201
 func CreateHealthAppointmentHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -57,8 +65,9 @@ func CreateHealthAppointmentHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(appt)
 }
 
-// GetAllHealthAppointmentsHandler lists every upcoming manual appointment for the user
-// GET /api/health-appointments
+// GetAllHealthAppointmentsHandler (GET /api/health-appointments) ดึงนัดที่ยังมาไม่ถึงของทุกคอก
+// ถ้าไม่มีเลย ส่ง [] (ไม่ใช่ null) หน้าเว็บ/แอปจะวนลูปได้โดยไม่ error
+// ถูกเรียกผ่าน: handleHealthAppointmentsGet ใน routes.go (เมื่อไม่มี ?coop_id=)
 func GetAllHealthAppointmentsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -86,8 +95,9 @@ func GetAllHealthAppointmentsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(appts)
 }
 
-// GetHealthAppointmentsByCoopHandler lists upcoming manual appointments for one coop
-// GET /api/health-appointments?coop_id=5
+// GetHealthAppointmentsByCoopHandler (GET /api/health-appointments?coop_id=5) ดึงนัดของคอกเดียว
+// ส่ง &coopID (pointer) ให้ database เพื่อบอกว่า "กรองตามคอก" (ถ้าส่ง nil = ทุกคอก)
+// ถูกเรียกผ่าน: handleHealthAppointmentsGet ใน routes.go (เมื่อมี ?coop_id=)
 func GetHealthAppointmentsByCoopHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -121,8 +131,8 @@ func GetHealthAppointmentsByCoopHandler(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(appts)
 }
 
-// DeleteHealthAppointmentHandler removes a manual appointment
-// DELETE /api/health-appointments?id=3
+// DeleteHealthAppointmentHandler (DELETE /api/health-appointments?id=3) ยกเลิกนัด
+// ไม่เจอ หรือไม่ใช่ของผู้ใช้ -> 404
 func DeleteHealthAppointmentHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)

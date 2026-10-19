@@ -1,3 +1,10 @@
+// =====================================================================================
+// ไฟล์ handlers/farm_threshold.go - API ค่ามาตรฐานอุณหภูมิ/แอมโมเนียของฟาร์ม
+// =====================================================================================
+//
+// ผู้ใช้ 1 คนมีค่ามาตรฐาน 1 ชุด (ใช้ทุกคอก) หน้าเว็บใช้แสดง/เปรียบเทียบกับค่าจริงจากเซนเซอร์
+// และส่งให้บอร์ดทาง MQTT (ระบบเปิด/ปิดพัดลมหรือหลอดไฟอัตโนมัติตามค่านี้ยังไม่ได้ทำ)
+// ข้อมูลอยู่ใน database/farm_threshold_repository.go
 package handlers
 
 import (
@@ -11,8 +18,9 @@ import (
 	"EZ-SmartFarm_BachN/services"
 )
 
-// GetFarmThresholdHandler retrieves the caller's farm-wide target temperature/ammonia
-// GET /api/farm-threshold
+// GetFarmThresholdHandler (GET /api/farm-threshold) ส่งค่ามาตรฐานของผู้ใช้กลับไป
+// ถ้ายังไม่เคยตั้ง ฝั่ง database จะสร้างค่าเริ่มต้นให้
+// เรียกจาก: หน้าเว็บส่วนสถานะ/ค่ามาตรฐานของฟาร์ม
 func GetFarmThresholdHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)
@@ -37,8 +45,10 @@ func GetFarmThresholdHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(threshold)
 }
 
-// UpdateFarmThresholdHandler sets the caller's farm-wide target temperature/ammonia
-// PUT /api/farm-threshold  body: {"temperature": 25, "ammonia": 35}
+// UpdateFarmThresholdHandler (PUT /api/farm-threshold) บันทึกค่ามาตรฐานใหม่
+// body: {"temperature": 25, "ammonia": 35}
+// หลังบันทึกสำเร็จ ส่งค่าใหม่ไปให้บอร์ดทุกคอกทาง MQTT (services.PublishThresholdsForUser)
+// ทำใน goroutine (go ...) เพื่อตอบหน้าเว็บทันที ไม่ต้องรอ broker ตอบกลับ
 func UpdateFarmThresholdHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		log.Printf("[%s] %s - %d (Method not allowed)", r.Method, r.RequestURI, http.StatusMethodNotAllowed)

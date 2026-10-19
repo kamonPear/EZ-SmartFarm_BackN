@@ -1,3 +1,14 @@
+// =====================================================================================
+// ไฟล์ database/foodstock_repository.go - ยอดอาหารคงเหลือในคลัง (ตาราง foodstock)
+// =====================================================================================
+//
+// ผู้ใช้ 1 คนมีได้ 1 แถวต่ออาหาร 1 ประเภท:
+//   - เม็ดเล็ก : สำหรับไก่อายุ 0-14 สัปดาห์
+//   - เม็ดใหญ่ : สำหรับไก่อายุ 14 สัปดาห์ขึ้นไป
+//
+// ยอดเพิ่มเมื่อนำเข้าล็อตใหม่ (importfood_repository.go -> addToFoodstock)
+// ยอดลดเมื่อตัดสต็อกประจำวัน (DeductFoodstockByType) หรือผู้ใช้แก้ยอดเอง (UpdateFoodstock)
+// ถูกเรียกจาก: handlers/foodstock.go และ handlers/food_distribution.go
 package database
 
 import (
@@ -11,7 +22,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// GetFoodstockByID retrieves a foodstock row by ID, only if it's owned by userID
+// GetFoodstockByID ดึงแถวสต็อกตาม food_id เฉพาะของผู้ใช้คนนั้น ไม่เจอคืน ErrNotFound
+// ถูกเรียกจาก: handlers/foodstock.go (GET /api/foods?id=) และ DeleteFoodstock ด้านล่าง
 func GetFoodstockByID(foodID int, userID int) (*models.Foodstock, error) {
 	var foodstock *models.Foodstock
 
@@ -27,7 +39,8 @@ func GetFoodstockByID(foodID int, userID int) (*models.Foodstock, error) {
 	return foodstock, nil
 }
 
-// GetAllFoodstocks retrieves every foodstock row owned by userID
+// GetAllFoodstocks ดึงสต็อกทุกประเภทของผู้ใช้ ใช้แสดง "สรุปสต็อกปัจจุบัน" ในหน้าคลังอาหาร
+// ถูกเรียกจาก: handlers/foodstock.go
 func GetAllFoodstocks(userID int) ([]models.Foodstock, error) {
 	var foodstocks []models.Foodstock
 
@@ -39,7 +52,10 @@ func GetAllFoodstocks(userID int) ([]models.Foodstock, error) {
 	return foodstocks, nil
 }
 
-// UpdateFoodstock manually corrects the current stock total, only if it's owned by userID
+// UpdateFoodstock แก้ยอดคงเหลือให้ตรงกับของจริงที่นับได้ (ส่วน "อัปเดตสต็อกอาหาร")
+// ตั้ง QuantityCurrent เป็นค่าใหม่ทันที (ไม่ใช่บวก/ลบ) และอัปเดตวันที่ DateUp
+// ถ้าไม่ส่งวันที่มา ใช้เวลาปัจจุบัน
+// ถูกเรียกจาก: handlers/foodstock.go -> UpdateFoodstockHandler (PUT /api/foods)
 func UpdateFoodstock(id int, req *models.UpdateFoodstockRequest, userID int) (*models.Foodstock, error) {
 	var foodstock models.Foodstock
 	if err := DB.Where("food_id = ? AND user_id = ?", id, userID).First(&foodstock).Error; err != nil {
@@ -62,15 +78,16 @@ func UpdateFoodstock(id int, req *models.UpdateFoodstockRequest, userID int) (*m
 	return &foodstock, nil
 }
 
-// ErrMinQuantityLocked is returned when the owner already set the low-stock threshold:
-// it can be set once and is locked afterwards (cannot be edited or cleared).
+// ErrMinQuantityLocked error เมื่อเจ้าของฟาร์มเคยตั้ง "ปริมาณใกล้หมด" ไปแล้ว
+// ตั้งได้ครั้งเดียว หลังจากนั้นล็อก แก้ไขหรือล้างค่าไม่ได้
 var ErrMinQuantityLocked = errors.New("low-stock threshold is already set and locked")
 
-// SetFoodMinQuantity sets the owner-defined low-stock threshold, once. It is one value
-// per owner, shared by every food type, so it's written onto all of userID's foodstock
-// rows (rows created later inherit it, see addToFoodstock). At least one row must already
-// exist (it's created by the first import). If a threshold was already set, nothing is
-// changed and ErrMinQuantityLocked is returned.
+// SetFoodMinQuantity ตั้ง "ปริมาณใกล้หมด" (กก.) ครั้งเดียว ถ้าสต็อกต่ำกว่านี้ระบบจะแจ้งเตือนว่าใกล้หมด
+// เป็นค่าเดียวต่อเจ้าของฟาร์ม ใช้ร่วมกันทุกประเภทอาหาร จึงเขียนลงทุกแถวสต็อกของผู้ใช้
+// (แถวที่สร้างทีหลังจะได้ค่านี้ตามไปด้วย ดู addToFoodstock)
+//  - ต้องมีแถวสต็อกอย่างน้อย 1 แถว (สร้างตอนนำเข้าอาหารครั้งแรก) ไม่งั้นคืน ErrNotFound
+//  - ถ้าเคยตั้งไปแล้ว ไม่แก้อะไร และคืน ErrMinQuantityLocked
+// ถูกเรียกจาก: handlers/foodstock.go -> UpdateFoodMinQuantityHandler (PUT /api/foods/min-quantity)
 func SetFoodMinQuantity(userID int, minQuantity float64) error {
 	if getSharedMinQuantity(userID) > 0 {
 		return ErrMinQuantityLocked
@@ -85,8 +102,8 @@ func SetFoodMinQuantity(userID int, minQuantity float64) error {
 	return nil
 }
 
-// getSharedMinQuantity returns the threshold userID already set on any of their rows
-// (0 if never set), so a food type imported for the first time can inherit it.
+// getSharedMinQuantity คืนปริมาณใกล้หมดที่ผู้ใช้เคยตั้งไว้ (0 = ยังไม่เคยตั้ง)
+// ใช้เช็กว่าล็อกแล้วหรือยัง และให้อาหารประเภทที่นำเข้าครั้งแรกได้ค่านี้ตามไปด้วย
 func getSharedMinQuantity(userID int) float64 {
 	var row models.Foodstock
 	if err := DB.Where("user_id = ? AND min_quantity > 0", userID).
@@ -96,7 +113,8 @@ func getSharedMinQuantity(userID int) float64 {
 	return row.MinQuantity
 }
 
-// DeleteFoodstock deletes a foodstock row, only if it's owned by userID
+// DeleteFoodstock ลบแถวสต็อกหนึ่งแถว (เช็กเจ้าของผ่าน GetFoodstockByID ก่อน)
+// ถูกเรียกจาก: handlers/foodstock.go (DELETE /api/foods)
 func DeleteFoodstock(foodID int, userID int) error {
 	foodstock, err := GetFoodstockByID(foodID, userID)
 	if err != nil {
@@ -112,7 +130,8 @@ func DeleteFoodstock(foodID int, userID int) error {
 	return nil
 }
 
-// GetFoodstockByType retrieves userID's running total row for a single food type (เม็ดเล็ก/เม็ดใหญ่)
+// GetFoodstockByType ดึงแถวสต็อกของอาหารประเภทเดียว (เม็ดเล็ก/เม็ดใหญ่) ของผู้ใช้
+// ตอนนี้ยังไม่มีที่ไหนเรียกใช้ (ใช้ GetFoodstockQuantity แทน)
 func GetFoodstockByType(foodType string, userID int) (*models.Foodstock, error) {
 	var foodstock models.Foodstock
 
@@ -126,14 +145,10 @@ func GetFoodstockByType(foodType string, userID int) (*models.Foodstock, error) 
 	return &foodstock, nil
 }
 
-// EnsureFoodstockRows is a one-time migration that adopts the legacy pre-ownership
-// untyped row (food_id=1, no food_type, no owner) onto the small pellet type, back
-// when foodstock had no user_id FK yet (it gets backfilled onto the bootstrap admin
-// user by ensureAdminBootstrapAndOwnership right after this runs). That FK now exists
-// on every environment, so it's no longer safe to create an ownerless row here even
-// as a fallback - every user gets their own per-type rows lazily instead (see
-// addToFoodstock the first time they import food). If there's no legacy row left to
-// adopt (already migrated, or the table was cleared out), this is a no-op.
+// EnsureFoodstockRows = migration ใช้ครั้งเดียว สำหรับข้อมูลรุ่นเก่า
+// สมัยก่อนตาราง foodstock ยังไม่มี food_type และ user_id ฟังก์ชันนี้จะหาแถวเก่าที่ไม่มีประเภท
+// แล้วกำหนดให้เป็น "เม็ดเล็ก" (จากนั้น migration ส่วนอื่นจะกำหนดเจ้าของให้)
+// ถ้าไม่มีแถวเก่าเหลือแล้ว ก็ไม่ทำอะไร ปัจจุบันผู้ใช้ใหม่จะได้แถวของตัวเองตอนนำเข้าอาหารครั้งแรก
 func EnsureFoodstockRows() error {
 	var legacy models.Foodstock
 	hasLegacyRow := DB.Where("food_type = ? OR food_type IS NULL", "").First(&legacy).Error == nil
@@ -149,8 +164,9 @@ func EnsureFoodstockRows() error {
 	return nil
 }
 
-// GetFoodstockQuantity returns userID's current quantity_current for foodType, and
-// whether a row exists at all yet (found=false if the farm never had this food type).
+// GetFoodstockQuantity คืนยอดคงเหลือ (กก.) ของอาหารประเภทนี้ของผู้ใช้ และบอกว่ามีแถวหรือไม่ (found)
+// found = false แปลว่าฟาร์มนี้ไม่เคยมีอาหารประเภทนี้เลย
+// ถูกเรียกจาก: handlers/food_distribution.go (เช็กว่าสต็อกหมดหรือยัง เช่นข้อความ "สต็อกหมดแล้ว ไม่มีอะไรให้ตัด")
 func GetFoodstockQuantity(userID int, foodType string) (quantity float64, found bool, err error) {
 	var foodstock models.Foodstock
 	if err := DB.Where("food_type = ? AND user_id = ?", foodType, userID).First(&foodstock).Error; err != nil {
@@ -162,14 +178,15 @@ func GetFoodstockQuantity(userID int, foodType string) (quantity float64, found 
 	return foodstock.QuantityCurrent, true, nil
 }
 
-// DeductFoodstockByType ลด quantity_current ของอาหารประเภทที่ระบุลงตามจำนวนที่ขอ
-// (amount) เฉพาะสต็อกของ userID เท่านั้น - ตัดแบบ "ทั้งหมดหรือไม่เลย" เท่านั้น ถ้า
-// สต็อกที่เหลือไม่พอสำหรับ amount ที่ขอ จะไม่ตัดอะไรเลยแม้แต่กิโลเดียว (deducted=0)
-// แล้วรายงานส่วนที่ขาด (shortfall) กลับไปแทน - เดิมฟังก์ชันนี้ตัดสต็อกเท่าที่มีให้
-// บางส่วนแล้วค่อยรายงานว่าขาด ทำให้สต็อกที่เหลือน้อยอยู่แล้วถูกล้างเป็น 0 ไปเงียบๆ
-// ทั้งที่ของจริงยังไม่ได้ถูกเอาออกไปใช้แต่อย่างใด (ผู้ใช้ยืนยันว่าไม่ต้องการแบบนั้น -
-// ถ้าไม่พอสำหรับยอดที่ต้องการจริง ก็ไม่ควรตัดอะไรเลย ปล่อยให้สต็อกที่เหลือยังอยู่ครบ
-// จนกว่าจะเติมของเพิ่ม)
+// DeductFoodstockByType ตัดสต็อกอาหารประเภทนี้ลง amount กก. แบบ "ทั้งหมดหรือไม่ตัดเลย"
+//
+// คืนค่า: deducted (ตัดไปจริงกี่ กก.), shortfall (ขาดอีกกี่ กก.), err
+//   - สต็อกพอ  -> ลดยอดลง amount, อัปเดต DateUp, คืน deducted = amount
+//   - สต็อกไม่พอ -> "ไม่ตัดเลย" คืน deducted = 0 และ shortfall = ส่วนที่ขาด
+//
+// ทำไมไม่ตัดเท่าที่มี: เดิมเคยตัดบางส่วนจนยอดเหลือ 0 ทั้งที่อาหารจริงยังไม่ได้ถูกใช้ ทำให้ยอดในระบบ
+// ไม่ตรงกับของจริง ผู้ใช้จึงต้องการว่าถ้าไม่พอก็ไม่ตัด รอเติมของก่อน
+// ถูกเรียกจาก: handlers/foodstock.go (ตัดสต็อกอัตโนมัติ 06:00 น. และปุ่ม "ตัดสต็อก") และ handlers/food_distribution.go
 func DeductFoodstockByType(foodType string, userID int, amount float64) (deducted float64, shortfall float64, err error) {
 	var foodstock models.Foodstock
 
@@ -196,4 +213,3 @@ func DeductFoodstockByType(foodType string, userID int, amount float64) (deducte
 	log.Printf("✓ ตัดสต็อก %s %.2f kg คงเหลือ %.2f kg (user %d)\n", foodType, amount, foodstock.QuantityCurrent, userID)
 	return amount, 0, nil
 }
-

@@ -1,8 +1,11 @@
+// =====================================================================================
+// ไฟล์ models/vaccine_request.go - รูปแบบ JSON ตอนบันทึก/แก้ไขประวัติการให้วัคซีน
+// =====================================================================================
 package models
 
 import "time"
 
-// CreateVaccineRequest represents the request payload for recording a vaccine administration
+// CreateVaccineRequest body ของ POST /api/vaccines: คอก, ชื่อวัคซีน, วิธีให้, อายุที่แนะนำ, วันที่ให้, หมายเหตุ
 type CreateVaccineRequest struct {
 	CoopID         int       `json:"coop_id" binding:"required"`
 	Name           string    `json:"name" binding:"required"`
@@ -12,8 +15,7 @@ type CreateVaccineRequest struct {
 	Note           string    `json:"note"`
 }
 
-// UpdateVaccineRequest represents the payload for updating a vaccine record.
-// Fields left zero-valued are left unchanged.
+// UpdateVaccineRequest body ของ PUT /api/vaccines?id= ช่องที่ว่าง/ศูนย์จะคงค่าเดิม
 type UpdateVaccineRequest struct {
 	Name           string    `json:"name"`
 	Method         string    `json:"method"`

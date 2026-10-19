@@ -1,3 +1,10 @@
+// =====================================================================================
+// ไฟล์ database/health_repository.go - ผลการตรวจสุขภาพไก่ (ตาราง health)
+// =====================================================================================
+//
+// ผลตรวจ 1 ครั้ง = 1 แถว: คอก, จำนวนไก่สุขภาพดี, จำนวนไก่ป่วย, วันที่ตรวจ, หมายเหตุ
+// ตารางมี unique key (coop_id, date) = คอกเดียวกันบันทึกผลตรวจซ้ำในวันเดียวกันไม่ได้
+// ถูกเรียกจาก: handlers/health.go และ handlers/vaccine.go (แจ้งเตือนตรวจสุขภาพ)
 package database
 
 import (
@@ -11,9 +18,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// IsDuplicateHealthDate reports whether err is a unique-constraint violation
-// on (coop_id, date) - i.e. a health record already exists for that coop on
-// that date. Mirrors IsDuplicateEggDate (database/egg_repository.go).
+// IsDuplicateHealthDate ตรวจว่า error จาก DB เกิดจาก "บันทึกผลตรวจซ้ำวันเดิม" หรือไม่
+// (ข้อความ error มีทั้งคำว่า duplicate และ coop_id)
+// handler จะได้ตอบว่า "มีผลตรวจของคอกนี้วันที่ ... อยู่แล้ว กรุณาแก้ไขข้อมูลเดิมแทน"
+// ถูกเรียกจาก: handlers/health.go
 func IsDuplicateHealthDate(err error) bool {
 	if err == nil {
 		return false
@@ -22,12 +30,18 @@ func IsDuplicateHealthDate(err error) bool {
 	return strings.Contains(msg, "duplicate") && strings.Contains(msg, "coop_id")
 }
 
+// normalizeHealthDate ตัดเวลาออกจากวันที่ เหลือแค่วัน (00:00 ตามเวลาท้องถิ่น)
+// เพื่อให้ unique key (coop_id, date) กันซ้ำได้จริง ถ้ามีเวลาติดมา วันเดียวกันจะดูเหมือนคนละค่า
 func normalizeHealthDate(t time.Time) time.Time {
 	local := t.In(time.Local)
 	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.Local)
 }
 
-// CreateHealth creates a new health record in the database, only if req.CoopID belongs to userID
+// CreateHealth บันทึกผลตรวจสุขภาพใหม่ (ปุ่ม "บันทึกข้อมูล" หน้าตรวจสุขภาพไก่)
+// เช็กก่อนว่าคอกเป็นของผู้ใช้ แล้วตัดเวลาออกจากวันที่ก่อนบันทึก
+// ถ้าวันนั้นมีผลตรวจแล้ว DB จะคืน error ซ้ำ ซึ่ง handler แยกด้วย IsDuplicateHealthDate
+// (ฝั่ง backend ตรวจแค่ว่าต้องมี coop_id และวันที่ ใน handlers/health.go)
+// ถูกเรียกจาก: handlers/health.go -> CreateHealthHandler (POST /api/healths)
 func CreateHealth(req *models.CreateHealthRequest, userID int) (*models.Health, error) {
 	owned, err := CoopBelongsToUser(req.CoopID, userID)
 	if err != nil {
@@ -56,7 +70,7 @@ func CreateHealth(req *models.CreateHealthRequest, userID int) (*models.Health, 
 	return health, nil
 }
 
-// GetHealthByID retrieves a health record by ID, only if its coop belongs to userID
+// GetHealthByID ดึงผลตรวจ 1 รายการตาม id พร้อมข้อมูลคอก เฉพาะคอกของผู้ใช้ ไม่เจอคืน ErrNotFound
 func GetHealthByID(id int, userID int) (*models.Health, error) {
 	var h *models.Health
 
@@ -73,7 +87,8 @@ func GetHealthByID(id int, userID int) (*models.Health, error) {
 	return h, nil
 }
 
-// GetHealthsByCoopID retrieves all health records for a specific coop, only if it belongs to userID
+// GetHealthsByCoopID ดึงผลตรวจทั้งหมดของคอกเดียว เรียงจากวันล่าสุด (หลังเช็กว่าคอกเป็นของผู้ใช้)
+// ใช้ในส่วน "ประวัติสุขภาพ" ของหน้าแก้ไขข้อมูลคอกไก่
 func GetHealthsByCoopID(coopID int, userID int) ([]models.Health, error) {
 	var hs []models.Health
 
@@ -94,7 +109,7 @@ func GetHealthsByCoopID(coopID int, userID int) ([]models.Health, error) {
 	return hs, nil
 }
 
-// GetAllHealths retrieves every health record belonging to any of userID's coops
+// GetAllHealths ดึงผลตรวจของทุกคอกของผู้ใช้ เรียงจากวันล่าสุด ใช้ทำกราฟสรุปผลสุขภาพไก่
 func GetAllHealths(userID int) ([]models.Health, error) {
 	var hs []models.Health
 
@@ -108,7 +123,12 @@ func GetAllHealths(userID int) ([]models.Health, error) {
 	return hs, nil
 }
 
-// UpdateHealth updates an existing health record, only if it (and any target coop) belongs to userID
+// UpdateHealth แก้ไขผลตรวจ (หน้าต่าง "แก้ไข บันทึกสุขภาพ")
+//   - เช็กว่าผลตรวจเป็นของผู้ใช้ ถ้าย้ายไปคอกอื่น คอกนั้นต้องเป็นของผู้ใช้ด้วย
+//   - อัปเดตเฉพาะช่องที่ส่งมา โดยใช้ map ที่ key เป็น "ชื่อคอลัมน์จริงในตาราง"
+//     (number_healthy, number_poor_health, date) ไม่ใช่ชื่อ field ใน Go
+//     เพราะ GORM ไม่แปลงชื่อให้เมื่อส่งเป็น map
+//   - จำนวนไก่ใช้ >= 0 เพราะ 0 ตัวเป็นค่าที่ถูกต้อง (เช่นไม่มีไก่ป่วยเลย)
 func UpdateHealth(id int, req *models.UpdateHealthRequest, userID int) (*models.Health, error) {
 	h, err := GetHealthByID(id, userID)
 	if err != nil {
@@ -161,7 +181,7 @@ func UpdateHealth(id int, req *models.UpdateHealthRequest, userID int) (*models.
 	return h, nil
 }
 
-// DeleteHealth deletes a health record, only if its coop belongs to userID
+// DeleteHealth ลบผลตรวจ 1 รายการ (เช็กสิทธิ์ผ่าน GetHealthByID ก่อน)
 func DeleteHealth(id int, userID int) error {
 	h, err := GetHealthByID(id, userID)
 	if err != nil {
@@ -177,7 +197,7 @@ func DeleteHealth(id int, userID int) error {
 	return nil
 }
 
-// DeleteHealthsByCoopID deletes all health records for a coop
+// DeleteHealthsByCoopID ลบผลตรวจทั้งหมดของคอก "โดยไม่เช็กเจ้าของ" ตอนนี้ไม่มีที่ไหนเรียกใช้
 func DeleteHealthsByCoopID(coopID int) error {
 	if err := DB.Where("coop_id = ?", coopID).Delete(&models.Health{}).Error; err != nil {
 		log.Printf("Error deleting health records for coop %d: %v", coopID, err)
@@ -188,24 +208,29 @@ func DeleteHealthsByCoopID(coopID int) error {
 	return nil
 }
 
-
 // ==========================================
 // 🌟 ส่วนแจ้งเตือนตรวจสุขภาพ (Notifications)
 // ==========================================
 
-// HealthNotiDB โครงสร้างชั่วคราวเพื่อรับค่าจาก Database (ใช้ตัวเลข CoopID)
+// HealthNotiDB โครงสร้างชั่วคราวใช้รับผลจาก SQL ดิบใน GetHealthCheckNotifications
+// (is_today เป็น 1/0 เพราะ SQL คืนตัวเลข)
 type HealthNotiDB struct {
 	CoopID  int `gorm:"column:coop_id"`
 	IsToday int `gorm:"column:is_today"`
 }
 
-// HealthNotification โครงสร้างข้อมูลสำหรับแปลงตัวเลขเป็นข้อความก่อนส่งไปให้แอป
+// HealthNotification รูปแบบข้อมูลแจ้งเตือนที่ส่งกลับให้แอป: ชื่อคอก และวันนี้หรือพรุ่งนี้ (true/false)
 type HealthNotification struct {
 	CoopName string `json:"coop_name"`
 	IsToday  bool   `json:"is_today"`
 }
 
-// GetHealthCheckNotifications ดึงข้อมูลคอกที่ต้องตรวจสุขภาพของ "วันนี้" และ "พรุ่งนี้" ของ userID เท่านั้น
+// GetHealthCheckNotifications ดึงคอกที่มีการตรวจสุขภาพ "วันนี้" หรือ "พรุ่งนี้" ของผู้ใช้
+// ใช้ SQL ดิบ (DB.Raw) เพราะต้องใช้ CASE WHEN และ DATE() ซึ่งเขียนแบบ SQL ตรง ๆ อ่านง่ายกว่า
+// แต่ยังส่งค่าผ่าน ? เสมอ จึงปลอดภัยจาก SQL injection
+// JOIN coop เพื่อกรองเฉพาะคอกของผู้ใช้
+// ข้อสังเกต: CoopName ใส่เป็น "เลข id ของคอก" (ไม่ใช่ชื่อคอกจริง) ตามรูปแบบที่แอปรุ่นเดิมใช้
+// ถูกเรียกจาก: handlers/vaccine.go -> GetHealthCheckNotiHandler (GET /api/notifications/health_checks)
 func GetHealthCheckNotifications(userID int) ([]HealthNotification, error) {
 	var dbResults []HealthNotiDB
 
