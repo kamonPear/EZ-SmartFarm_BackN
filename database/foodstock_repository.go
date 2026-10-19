@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -61,22 +62,38 @@ func UpdateFoodstock(id int, req *models.UpdateFoodstockRequest, userID int) (*m
 	return &foodstock, nil
 }
 
-// SetFoodMinQuantity sets the owner-defined low-stock threshold for userID's row of
-// foodType. The row must already exist (it's created by the first import of that type).
-func SetFoodMinQuantity(userID int, foodType string, minQuantity float64) (*models.Foodstock, error) {
-	var foodstock models.Foodstock
-	if err := DB.Where("food_type = ? AND user_id = ?", foodType, userID).First(&foodstock).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
+// ErrMinQuantityLocked is returned when the owner already set the low-stock threshold:
+// it can be set once and is locked afterwards (cannot be edited or cleared).
+var ErrMinQuantityLocked = errors.New("low-stock threshold is already set and locked")
 
-	if err := DB.Model(&foodstock).Update("min_quantity", minQuantity).Error; err != nil {
-		return nil, err
+// SetFoodMinQuantity sets the owner-defined low-stock threshold, once. It is one value
+// per owner, shared by every food type, so it's written onto all of userID's foodstock
+// rows (rows created later inherit it, see addToFoodstock). At least one row must already
+// exist (it's created by the first import). If a threshold was already set, nothing is
+// changed and ErrMinQuantityLocked is returned.
+func SetFoodMinQuantity(userID int, minQuantity float64) error {
+	if getSharedMinQuantity(userID) > 0 {
+		return ErrMinQuantityLocked
 	}
-	foodstock.MinQuantity = minQuantity
-	return &foodstock, nil
+	result := DB.Model(&models.Foodstock{}).Where("user_id = ?", userID).Update("min_quantity", minQuantity)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// getSharedMinQuantity returns the threshold userID already set on any of their rows
+// (0 if never set), so a food type imported for the first time can inherit it.
+func getSharedMinQuantity(userID int) float64 {
+	var row models.Foodstock
+	if err := DB.Where("user_id = ? AND min_quantity > 0", userID).
+		Order("min_quantity desc").First(&row).Error; err != nil {
+		return 0
+	}
+	return row.MinQuantity
 }
 
 // DeleteFoodstock deletes a foodstock row, only if it's owned by userID

@@ -138,8 +138,8 @@ func UpdateFoodstockHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(foodstock)
 }
 
-// UpdateFoodMinQuantityHandler sets the owner-defined low-stock alert threshold of one food type
-// PUT /api/foods/min-quantity  body: {"food_type": "เม็ดเล็ก", "min_quantity": 50}
+// UpdateFoodMinQuantityHandler sets the owner-defined low-stock alert threshold, one value shared by all food types
+// PUT /api/foods/min-quantity  body: {"min_quantity": 50}
 func UpdateFoodMinQuantityHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -157,17 +157,18 @@ func UpdateFoodMinQuantityHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	if !models.IsValidFoodType(req.FoodType) {
-		http.Error(w, "ต้องระบุ food_type เป็น 'เม็ดเล็ก' หรือ 'เม็ดใหญ่'", http.StatusBadRequest)
-		return
-	}
-	if req.MinQuantity < 0 {
-		http.Error(w, "min_quantity ต้องไม่ติดลบ", http.StatusBadRequest)
+	if req.MinQuantity <= 0 {
+		http.Error(w, "min_quantity ต้องมากกว่า 0", http.StatusBadRequest)
 		return
 	}
 
-	foodstock, err := database.SetFoodMinQuantity(userID, req.FoodType, req.MinQuantity)
-	if err != nil {
+	// ค่าเดียวใช้ร่วมกันทุกประเภทอาหาร (food_type ในคำขอไม่จำเป็น ไม่ได้ใช้แล้ว)
+	// ตั้งได้ครั้งเดียว หลังจากนั้นล็อก แก้ไขไม่ได้
+	if err := database.SetFoodMinQuantity(userID, req.MinQuantity); err != nil {
+		if errors.Is(err, database.ErrMinQuantityLocked) {
+			http.Error(w, "ตั้งปริมาณอาหารใกล้หมดไว้แล้ว แก้ไขไม่ได้", http.StatusConflict)
+			return
+		}
 		if errors.Is(err, database.ErrNotFound) {
 			http.Error(w, "ยังไม่เคยนำเข้าอาหารประเภทนี้ กรุณานำเข้าสต็อกก่อน", http.StatusNotFound)
 			return
@@ -178,8 +179,8 @@ func UpdateFoodMinQuantityHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	log.Printf("[%s] %s - %d ✓ Set min quantity of %s to %.2f", r.Method, r.RequestURI, http.StatusOK, req.FoodType, req.MinQuantity)
-	json.NewEncoder(w).Encode(foodstock)
+	log.Printf("[%s] %s - %d ✓ Set min quantity (all food types) to %.2f", r.Method, r.RequestURI, http.StatusOK, req.MinQuantity)
+	json.NewEncoder(w).Encode(map[string]float64{"min_quantity": req.MinQuantity})
 }
 
 // DeleteFoodstockHandler deletes a foodstock
