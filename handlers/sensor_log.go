@@ -52,6 +52,31 @@ func GetMotionAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rows)
 }
 
+// GetOfflineSensorsHandler returns the caller's sensors that are currently not
+// working (Offline), so web and mobile clients can raise a "sensor down" alert.
+func GetOfflineSensorsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	rows, err := database.GetOfflineSensorsForUser(userID)
+	if err != nil {
+		log.Printf("GetOfflineSensorsHandler: failed to fetch offline sensors for user %d: %v", userID, err)
+		http.Error(w, "Failed to fetch offline sensors", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rows)
+}
+
 // ReceiveSensorDataHandler (POST /api/sensor-logs) รับค่าเซนเซอร์ผ่าน HTTP แล้วบันทึกเป็นแถวใหม่
 // เป็นช่องทางสำรอง/ทดสอบ ช่องทางหลักคือ MQTT (services/sensor_log.go)
 // ไม่ต้องล็อกอิน เพราะบอร์ดไม่มี JWT ตอบ 201 พร้อม log_id ของแถวที่บันทึก

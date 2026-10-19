@@ -172,6 +172,7 @@ func SetupRoutes(db *gorm.DB) {
 	rg.POST("/api/sensor-logs", handlers.ReceiveSensorDataHandler)
 	rg.POST("/api/sensor/upload", handlers.HandleArduinoUpload(db))
 	rg.GET("/api/motion-alerts", auth.RequireAuth(handlers.GetMotionAlertsHandler))
+	rg.GET("/api/offline-alerts", auth.RequireAuth(handlers.GetOfflineSensorsHandler))
 }
 
 // handleCoopsGet แยกเส้นทาง GET /api/coops เป็น 2 กรณีตาม query:
