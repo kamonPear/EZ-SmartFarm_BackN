@@ -21,3 +21,9 @@ type CoopPositionEntry struct {
 type UpdateCoopPositionsRequest struct {
 	Positions []CoopPositionEntry `json:"positions"`
 }
+
+// UpdateCoopOrderRequest body ของ PUT /api/coops/order = รหัสคอกเรียงตามลำดับที่ผู้ใช้ลากจัดไว้
+// ตัวแรกในรายการ = แสดงก่อนสุด
+type UpdateCoopOrderRequest struct {
+	CoopIDs []int `json:"coop_ids"`
+}

@@ -123,3 +123,38 @@ func UpdateCoopPositionsHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[%s] %s - %d ✓ Saved positions for %d coops", r.Method, r.RequestURI, http.StatusOK, len(req.Positions))
 	json.NewEncoder(w).Encode(map[string]interface{}{"message": "บันทึกผังฟาร์มสำเร็จ", "count": len(req.Positions)})
 }
+
+// UpdateCoopOrderHandler (PUT /api/coops/order) บันทึกลำดับคอกที่ผู้ใช้ลากจัดในหน้าหลัก
+// body: {"coop_ids": [3, 1, 2]} ตัวแรก = แสดงก่อนสุด  มีคอกที่ไม่ใช่ของผู้ใช้ -> 404 ไม่บันทึกอะไรเลย
+func UpdateCoopOrderHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID, ok := auth.UserIDFromContext(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req models.UpdateCoopOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.CoopIDs) == 0 {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := database.UpdateCoopOrder(req.CoopIDs, userID); err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			http.Error(w, "Coop not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("[%s] %s - %d (Failed to update coop order: %v)", r.Method, r.RequestURI, http.StatusInternalServerError, err)
+		http.Error(w, "Failed to update coop order", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	log.Printf("[%s] %s - %d ✓ Saved order for %d coops", r.Method, r.RequestURI, http.StatusOK, len(req.CoopIDs))
+	json.NewEncoder(w).Encode(map[string]interface{}{"message": "บันทึกลำดับคอกสำเร็จ", "count": len(req.CoopIDs)})
+}
